@@ -350,6 +350,9 @@ jobs:
             -e SUPERADMIN_PASSWORD=admin123456 \
             -e NEXTCLOUD_ADMIN_USER=admin \
             -e NEXTCLOUD_ADMIN_PASSWORD=admin123 \
+            -e GUNICORN_WORKER_TIMEOUT=120 \
+            -e GUNICORN_WORKERS=2 \
+            -e PORT=8000 \
             -p 8000:8000 \
             ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-backend:${{ github.sha }}
 
