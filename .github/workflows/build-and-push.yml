@@ -425,13 +425,22 @@ jobs:
           submodules: recursive
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Copy OpenAPI schema for frontend build
+      - name: Prepare OpenAPI schema for frontend build
         run: |
           echo "📋 Copying OpenAPI schema from backend to frontend..."
           mkdir -p frontend/src/api
           cp backend/apps/nextcloud/openapi/schema.json frontend/src/api/schema.json
           echo "✅ Schema copied successfully"
           ls -la frontend/src/api/schema.json
+
+          echo "📋 Modifying package.json to skip openapi-download during build..."
+          # Create a temporary package.json that skips openapi-download
+          cd frontend
+          # Backup original package.json
+          cp package.json package.json.bak
+          # Remove openapi-download from prepare script to avoid network call
+          sed -i 's/"npm run openapi-tasks"/"npm run openapi-optimize \&\& npm run openapi-typegen"/' package.json
+          echo "✅ Modified package.json to skip download step"
 
       - name: Set up QEMU for multi-arch builds
         uses: docker/setup-qemu-action@v3
@@ -476,7 +485,7 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-frontend:latest${{ needs.prepare.outputs.tag_suffix }}
             ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-frontend:${{ github.sha }}
           build-args: |
-            OPENAPI_SCHEMA_LOCATION=./src/api/schema.json
+            SKIP_OPENAPI_DOWNLOAD=true
           labels: |
             org.opencontainers.image.title=ColmenaOS frontend
             org.opencontainers.image.description=ColmenaOS frontend service
