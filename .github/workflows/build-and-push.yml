@@ -344,6 +344,8 @@ jobs:
             -e NEXTCLOUD_URL=http://localhost \
             -e NEXTCLOUD_API_URL=http://localhost/ocs/v2.php \
             -e NEXTCLOUD_API_WRAPPER_URL=http://localhost:5001 \
+            -e SUPERADMIN_EMAIL=admin@colmena.local \
+            -e SUPERADMIN_PASSWORD=admin123456 \
             -e NEXTCLOUD_ADMIN_USER=admin \
             -e NEXTCLOUD_ADMIN_PASSWORD=admin123 \
             -p 8000:8000 \
