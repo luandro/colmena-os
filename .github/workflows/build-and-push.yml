@@ -326,6 +326,7 @@ jobs:
             -e SECRET_KEY=test-secret-key-for-ci \
             -e DEBUG=1 \
             -e LOG_LEVEL=DEBUG \
+            -e DJANGO_SETTINGS_MODULE=colmena.settings.prod \
             -e NEXTCLOUD_URL=http://localhost \
             -e NEXTCLOUD_API_URL=http://localhost/ocs/v2.php \
             -e NEXTCLOUD_API_WRAPPER_URL=http://localhost:5001 \
@@ -336,6 +337,19 @@ jobs:
 
           echo "✅ Backend container started"
           docker ps -a --filter name=colmena-backend
+
+          # Give container a moment to start
+          sleep 3
+
+          echo "🔍 Checking if container is running..."
+          if docker ps --filter name=colmena-backend --filter status=running --quiet | grep -q .; then
+            echo "✅ Container is running"
+            echo "🔍 Checking environment variables in container..."
+            docker exec colmena-backend env | grep -E "(SECRET_KEY|DEBUG|DATABASE_URL)" || echo "Environment variables not found"
+          else
+            echo "❌ Container is not running, checking logs..."
+            docker logs colmena-backend
+          fi
 
       - name: Wait for backend to be ready
         run: |
