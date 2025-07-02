@@ -24,11 +24,23 @@ ColmenaOS is an offline-first operating system for community radio and podcastin
 - **CI/CD**: GitHub Actions + Balena Cloud
 - **Registry**: Docker Hub
 
+### Service Dependencies & Startup Order
+The services have strict dependencies that must be respected:
+```
+PostgreSQL (health check) → Nextcloud → Backend → Frontend
+```
+
+**Critical**: Backend requires Nextcloud for:
+- User management integration
+- File storage operations
+- App password creation
+- Superadmin initialization
+
 ### Architecture Pattern
 ```
 Frontend (React) → Backend (Django) → PostgreSQL
-                ↓
-            Nextcloud (Files)
+                ↓              ↓
+            Nextcloud ←────────┘
 ```
 
 ## Project Structure
@@ -70,37 +82,55 @@ colmena-os/                 # Main repository
 - Reusable actions are in `.github/actions/`
 - Always test with `act` locally if possible
 - Ensure Docker Hub credentials are referenced correctly
+- **Critical**: Respect service dependencies (PostgreSQL → Nextcloud → Backend → Frontend)
+- Use `load: true` for PR builds, `push: true` for branch builds
+- Environment variables must match Django expectations (e.g., `DEBUG=1` not `DEBUG=True`)
 
 ### When asked about deployment:
 - Draft deployments are automatic (on push to develop)
 - Production releases require manual approval
 - Balena handles the actual device updates
 - Check balena.yml for version management
+- CI/CD triggers Balena deployment automatically on successful builds
 
 ### When asked to add features:
 1. Consider offline functionality first
 2. Check if it needs changes in frontend, backend, or both (submodules)
-3. Update tests accordingly
-4. Document environment variables in .env.example
-5. Update README.md if user-facing
+3. Respect service dependencies and startup order
+4. Update tests accordingly
+5. Document environment variables in .env.example
+6. Update README.md if user-facing
+7. Test multi-architecture builds (AMD64/ARM64)
 
 ## Environment Variables
 
-Key variables that must be set:
-```
-# Database
+### Critical CI/CD Variables
+Key variables that must be set correctly:
+```bash
+# Database (CI/CD)
+DATABASE_URL=postgresql://user:pass@localhost:5432/dbname
+
+# Django Configuration
+SECRET_KEY=your-secret-key
+DEBUG=1                    # MUST be integer (0/1), not boolean (True/False)
+LOG_LEVEL=DEBUG
+
+# Nextcloud Integration
+NEXTCLOUD_URL=http://localhost
+NEXTCLOUD_API_URL=http://localhost/ocs/v2.php
+NEXTCLOUD_API_WRAPPER_URL=http://localhost:5001
+NEXTCLOUD_ADMIN_USER=admin
+NEXTCLOUD_ADMIN_PASSWORD=password
+
+# Production Variables
 POSTGRES_PASSWORD
 POSTGRES_USERNAME
 POSTGRES_DB
-
-# Services
-NEXTCLOUD_ADMIN_PASSWORD
-SECRET_KEY (Django)
-
-# Balena
 BALENA_TOKEN
 BALENA_FLEET
 ```
+
+**Important**: Django environment variables must be compatible with `bool(int(env_var))` pattern.
 
 ## Testing Approach
 
@@ -181,14 +211,46 @@ git commit -m "Update backend submodule"
 - ❌ Break backward compatibility without version bump
 - ❌ Ignore resource constraints
 
-## Useful Commands
+## Development Workflow
 
+### Standard Git Workflow (ALWAYS FOLLOW)
+```bash
+# 1. Make changes to files
+# 2. Check whitespace and formatting
+git diff --check                    # Check for whitespace errors
+git status                         # Verify staged changes
+
+# 3. Stage and commit
+git add .
+git commit -m "type: clear description"
+
+# 4. Push to current branch
+git push origin $(git branch --show-current)
+
+# 5. Dispatch workflow (if CI/CD changes)
+gh workflow run "Build and Push Multi-Arch Images" --ref $(git branch --show-current)
+```
+
+### CI/CD Testing Commands
+```bash
+# Test workflow locally
+act push -j prepare
+
+# Test with specific branch
+act push --container-architecture linux/amd64
+
+# Manual workflow dispatch
+gh workflow run "Build and Push Multi-Arch Images" --ref develop
+gh workflow run "Build and Push Multi-Arch Images" --ref shift
+```
+
+### Useful Development Commands
 ```bash
 # Build all services locally
 docker compose build
 
-# Check logs
-docker compose logs -f [service]
+# Check logs with service dependencies
+docker compose logs -f postgres nextcloud backend frontend
 
 # Update all submodules
 git submodule update --remote --merge
@@ -198,6 +260,10 @@ balena push --dry-run
 
 # Test multi-arch build
 docker buildx build --platform linux/arm64,linux/amd64 .
+
+# Check service health
+curl -f http://localhost/status.php          # Nextcloud
+curl -f http://localhost:8000/api/schema     # Backend
 ```
 
 ## Related Documentation
@@ -215,8 +281,34 @@ If you need clarification:
 3. Consider the offline-first principle
 4. Ask for specific implementation details
 
+## AI Assistant Guidelines
+
+### Mandatory Workflow for ALL Code Changes
+When making ANY changes to project files, ALWAYS follow this exact sequence:
+
+1. **Make code changes** with proper validation
+2. **Check whitespace**: `git diff --check`
+3. **Stage changes**: `git add .`
+4. **Commit with clear message**: `git commit -m "type: description"`
+5. **Push to current branch**: `git push origin $(git branch --show-current)`
+6. **Dispatch workflow** (if CI/CD related): `gh workflow run "Build and Push Multi-Arch Images" --ref $(git branch --show-current)`
+
+### Service Dependency Rules
+- **NEVER** start backend without Nextcloud running
+- **ALWAYS** wait for PostgreSQL health checks before starting services
+- **ALWAYS** use proper environment variable formats (DEBUG=1, not DEBUG=True)
+- **ALWAYS** respect the startup order: PostgreSQL → Nextcloud → Backend → Frontend
+
+### CI/CD Best Practices
+- Use `load: true` for PR builds to make images available locally
+- Use `push: true` for branch builds to push to registry
+- Include comprehensive logging and health checks
+- Handle both local and registry image scenarios
+- Always cleanup services after testing
+
 ## Version History
 
 - v1.0.0 - Initial release with basic functionality
 - v1.1.0 - Added automated CI/CD pipeline
-- v1.2.0 - Current version with full Balena integration
+- v1.2.0 - Enhanced CI/CD with proper service dependencies
+- v1.3.0 - Current version with full Balena integration and robust error handling
