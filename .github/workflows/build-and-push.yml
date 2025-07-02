@@ -323,7 +323,7 @@ jobs:
             --name colmena-backend \
             --network host \
             -e DATABASE_URL=postgresql://testuser:testpassword@localhost:5432/testdb \
-            -e SECRET_KEY=test-secret-key-for-ci \
+            -e COLMENA_SECRET_KEY=test-secret-key-for-ci-minimum-50-characters-long-random-string-here \
             -e DEBUG=1 \
             -e LOG_LEVEL=DEBUG \
             -e DJANGO_SETTINGS_MODULE=colmena.settings.prod \
@@ -345,7 +345,7 @@ jobs:
           if docker ps --filter name=colmena-backend --filter status=running --quiet | grep -q .; then
             echo "✅ Container is running"
             echo "🔍 Checking environment variables in container..."
-            docker exec colmena-backend env | grep -E "(SECRET_KEY|DEBUG|DATABASE_URL)" || echo "Environment variables not found"
+            docker exec colmena-backend env | grep -E "(COLMENA_SECRET_KEY|SECRET_KEY|DEBUG|DATABASE_URL)" || echo "Environment variables not found"
           else
             echo "❌ Container is not running, checking logs..."
             docker logs colmena-backend
