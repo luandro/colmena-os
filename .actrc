@@ -1,0 +1,26 @@
+# Act Configuration for ColmenaOS
+# Local GitHub Actions testing configuration
+
+# Use latest Ubuntu container for consistency with GitHub hosted runners
+-P ubuntu-latest=catthehacker/ubuntu:act-latest
+
+# Container architecture (use native for better performance)
+--container-architecture linux/amd64
+
+# Artifact server for testing file uploads
+--artifact-server-path /tmp/act-artifacts
+
+# Default platform
+--platform ubuntu-latest=catthehacker/ubuntu:act-latest
+
+# Job timeout (30 minutes)
+--job-timeout 30m
+
+# Enable verbose logging for debugging
+--verbose
+
+# Use Docker socket for better performance
+--use-gitignore=false
+
+# Container options for better resource allocation
+--container-options "--memory=4g --cpus=2.0"
