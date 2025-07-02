@@ -186,7 +186,7 @@ jobs:
             NEXTCLOUD_API_WRAPPER_PORT=5001
             APACHE_APP_PATH=/var/www/nc_api_wrapper
             BUILD_CONTEXT=devops/apps/nextcloud/builder
-            OPENAPI_SCHEMA_LOCATION=${{ matrix.service == 'frontend' && 'file://./src/api/schema.json' || 'http://backend:8000/api/schema' }}
+            OPENAPI_SCHEMA_LOCATION=http://localhost:8000/api/schema
           labels: |
             org.opencontainers.image.title=ColmenaOS ${{ matrix.service }}
             org.opencontainers.image.description=ColmenaOS ${{ matrix.service }} service
