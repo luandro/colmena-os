@@ -29,6 +29,15 @@ config.json
 tests/test-results/
 tests/screenshots/
 tests/droplets.json
+/tmp/act-artifacts/
+
+# GitHub Actions local testing
+.secrets
+.secrets.*
+!.secrets.example
+
+# Act (GitHub Actions local runner)
+.actrc.local
 
 # IDE
 .vscode/
@@ -40,3 +49,12 @@ tests/droplets.json
 tmp/
 temp/
 .marscode/
+
+# CI/CD artifacts
+ci-results-*/
+*.zip
+*.tar.gz
+
+# Docker build artifacts
+.buildx-cache/
+.docker-cache/

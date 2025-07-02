@@ -1,9 +1,9 @@
 [submodule "frontend"]
 	path = frontend
-	url  = https://gitlab.com/colmena-project/dev/frontend.git
+	url = https://gitlab.com/colmena-project/dev/frontend.git
 [submodule "backend"]
 	path = backend
-	url  = https://gitlab.com/colmena-project/dev/backend.git
+	url = https://gitlab.com/colmena-project/dev/backend.git
 [submodule "colmena-devops"]
 	path = colmena-devops
 	url = https://gitlab.com/colmena-project/dev/colmena-devops.git
