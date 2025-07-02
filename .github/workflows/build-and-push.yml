@@ -166,6 +166,7 @@ jobs:
           file: ${{ steps.dockerfile.outputs.dockerfile }}
           platforms: ${{ needs.prepare.outputs.platforms }}
           push: ${{ github.event_name != 'pull_request' }}
+          load: ${{ github.event_name == 'pull_request' }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-${{ matrix.service }}:latest${{ needs.prepare.outputs.tag_suffix }}
             ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-${{ matrix.service }}:${{ github.sha }}
@@ -200,12 +201,20 @@ jobs:
           POSTGRES_PASSWORD: testpassword
           POSTGRES_USER: testuser
           POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U testuser -d testdb"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
     steps:
+      - name: Wait for PostgreSQL service health check
+        run: |
+          echo "⏳ Waiting for PostgreSQL service to pass health checks..."
+          # PostgreSQL service should be healthy before we proceed
+          sleep 30
+
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
@@ -214,17 +223,41 @@ jobs:
 
       - name: Start Nextcloud service
         run: |
-          echo "🔄 Pulling devops/Nextcloud image..."
-          docker pull ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-devops:${{ github.sha }}
+          # Handle different image sources for PRs vs branch builds
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "🔍 Using locally built devops image for PR"
+            # Image was loaded locally by build-backend-devops job
+          else
+            echo "🔄 Pulling devops/Nextcloud image from registry..."
+            docker pull ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-devops:${{ github.sha }}
+          fi
 
-          echo "🔍 Verifying PostgreSQL is ready..."
-          # Use docker to test PostgreSQL connection since psql client isn't installed on runner
-          docker run --rm --network host -e PGPASSWORD=testpassword postgres:13 \
-            psql -h localhost -U testuser -d testdb -c "SELECT version();" \
-            || {
-              echo "❌ PostgreSQL connection failed"
-              exit 1
-            }
+          echo "🔍 Waiting for PostgreSQL to be ready..."
+          # Give PostgreSQL service time to initialize
+          sleep 10
+
+          # Wait for PostgreSQL service to be fully ready
+          max_attempts=30
+          attempt=0
+
+          while [ $attempt -lt $max_attempts ]; do
+            if docker run --rm --network host -e PGPASSWORD=testpassword postgres:13 \
+               psql -h localhost -U testuser -d testdb -c "SELECT version();" >/dev/null 2>&1; then
+              echo "✅ PostgreSQL is ready!"
+              break
+            fi
+
+            attempt=$((attempt + 1))
+            echo "Attempt $attempt/$max_attempts - PostgreSQL not ready yet, waiting..."
+            sleep 5
+          done
+
+          if [ $attempt -eq $max_attempts ]; then
+            echo "❌ PostgreSQL failed to start within timeout"
+            echo "🔍 Checking PostgreSQL service status..."
+            docker ps -a | grep postgres || echo "No PostgreSQL containers found"
+            exit 1
+          fi
 
           echo "🚀 Starting Nextcloud service..."
           docker run -d \
@@ -276,8 +309,14 @@ jobs:
 
       - name: Start backend service
         run: |
-          echo "🔄 Pulling backend image..."
-          docker pull ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-backend:${{ github.sha }}
+          # Handle different image sources for PRs vs branch builds
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "🔍 Using locally built backend image for PR"
+            # Image was loaded locally by build-backend-devops job
+          else
+            echo "🔄 Pulling backend image from registry..."
+            docker pull ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-backend:${{ github.sha }}
+          fi
 
           echo "🚀 Starting backend service..."
           docker run -d \
@@ -394,7 +433,7 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-frontend:latest${{ needs.prepare.outputs.tag_suffix }}
             ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-frontend:${{ github.sha }}
           build-args: |
-            OPENAPI_SCHEMA_LOCATION=http://172.17.0.1:8000/api/schema
+            OPENAPI_SCHEMA_LOCATION=http://localhost:8000/api/schema
           network: host
           labels: |
             org.opencontainers.image.title=ColmenaOS frontend
@@ -419,7 +458,7 @@ jobs:
           echo "✅ Services cleaned up"
 
   notify-completion:
-    needs: [prepare, build-backend-devops, build-frontend]
+    needs: [prepare, build-backend-devops, build-frontend, start-backend]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -428,8 +467,9 @@ jobs:
         run: |
           backend_devops_result="${{ needs.build-backend-devops.result }}"
           frontend_result="${{ needs.build-frontend.result }}"
+          start_backend_result="${{ needs.start-backend.result }}"
 
-          if [[ "$backend_devops_result" == "success" ]] && [[ "$frontend_result" == "success" || "$frontend_result" == "skipped" ]]; then
+          if [[ "$backend_devops_result" == "success" ]] && [[ "$frontend_result" == "success" || "$frontend_result" == "skipped" ]] && [[ "$start_backend_result" == "success" || "$start_backend_result" == "skipped" ]]; then
             echo "status=success" >> $GITHUB_OUTPUT
             echo "message=✅ All Docker images built and pushed successfully" >> $GITHUB_OUTPUT
           else
