@@ -1,0 +1,156 @@
+#cloud-config
+
+# Update package database and upgrade system
+package_update: true
+package_upgrade: true
+
+# Install required packages
+packages:
+  # System utilities and dependencies
+  - curl
+  - wget
+  - software-properties-common
+  - ca-certificates
+  - gnupg
+  - lsb-release
+  - apt-transport-https
+  
+  # Python development
+  - python3.12
+  - python3.12-venv
+  - python3.12-dev
+  - python3-pip
+  
+  # Build essentials
+  - build-essential
+  - gcc
+  - g++
+  - make
+  - git
+  
+  # System utilities
+  - htop
+  - vim
+  - unzip
+  - jq
+  - tree
+  - zip
+
+# Create users and groups
+users:
+  - name: colmena
+    groups: docker
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+
+runcmd:
+  # Install Docker using official installation script
+  - curl -fsSL https://get.docker.com -o get-docker.sh
+  - sh get-docker.sh
+  - usermod -aG docker root
+  - usermod -aG docker ubuntu
+  - usermod -aG docker colmena || true
+    
+  # Install NVM and Node.js
+  - curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+  - export NVM_DIR="/root/.nvm"
+  - '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"'
+  - '[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"'
+  
+  # Install Node.js LTS via NVM for root user
+  - sudo -u root bash -c 'export NVM_DIR="/root/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" && nvm install --lts && nvm use --lts && nvm alias default lts/*'
+  
+  # Install Node.js LTS via NVM for ubuntu user
+  - sudo -u ubuntu bash -c 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash'
+  - sudo -u ubuntu bash -c 'export NVM_DIR="/home/ubuntu/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" && nvm install --lts && nvm use --lts && nvm alias default lts/*'
+  
+  # Create NVM symlinks for global access
+  - ln -sf /root/.nvm/versions/node/$(ls /root/.nvm/versions/node/ | head -1)/bin/node /usr/local/bin/node
+  - ln -sf /root/.nvm/versions/node/$(ls /root/.nvm/versions/node/ | head -1)/bin/npm /usr/local/bin/npm
+  - ln -sf /root/.nvm/versions/node/$(ls /root/.nvm/versions/node/ | head -1)/bin/npx /usr/local/bin/npx
+  
+  # Install Balena CLI globally
+  - npm install -g balena-cli --unsafe-perm
+  
+  # Create colmena command placeholder
+  - |
+    cat > /usr/local/bin/colmena << 'EOF'
+    #!/bin/bash
+    echo "Colmena CLI v1.0.0 (development testbed version)"
+    echo "Usage: colmena [command] [options]"
+    echo ""
+    echo "Available commands:"
+    echo "  init     Initialize a new Colmena project"
+    echo "  build    Build Colmena services"
+    echo "  deploy   Deploy to production"
+    echo "  status   Check service status"
+    echo ""
+    echo "This is a placeholder for testing. Actual CLI will be installed via npm."
+    EOF
+  - chmod +x /usr/local/bin/colmena
+  
+  # Configure environment for all users
+  - echo 'export NVM_DIR="/root/.nvm"' >> /root/.bashrc
+  - echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"' >> /root/.bashrc
+  - echo '[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"' >> /root/.bashrc
+  
+  # Set up development workspace
+  - mkdir -p /opt/colmena
+  - chown -R root:docker /opt/colmena
+  - chmod -R 775 /opt/colmena
+  
+  # Install development dependencies
+  - /root/.nvm/versions/node/$(ls /root/.nvm/versions/node/ | head -1)/bin/npm install -g yarn pnpm
+  
+  # Clean up
+  - rm -f get-docker.sh
+  - apt-get autoremove -y
+  - apt-get autoclean
+
+# Final system configuration
+write_files:
+  - path: /etc/docker/daemon.json
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "10m",
+          "max-file": "3"
+        },
+        "storage-driver": "overlay2"
+      }
+    permissions: '0644'
+  
+  - path: /opt/colmena/README.md
+    content: |
+      # ColmenaOS Testbed Environment
+      
+      This environment is pre-configured with:
+      - Docker and Docker Compose (latest)
+      - Node.js LTS via NVM
+      - Python 3.12 with development tools
+      - Build essentials
+      - Balena CLI
+      - Colmena CLI (placeholder)
+      
+      ## Quick Start
+      ```bash
+      # Check versions
+      docker --version
+      docker-compose --version
+      node --version
+      npm --version
+      balena --version
+      colmena --version
+      
+      # Clone and test ColmenaOS
+      git clone https://gitlab.com/colmena-project/colmena-os.git
+      cd colmena-os
+      docker-compose up -d
+      ```
+    permissions: '0644'
+
+# Restart services after configuration
+power_state:
+  mode: reboot
+  condition: true

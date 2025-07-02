@@ -1,0 +1,21 @@
+name: colmena-os
+type: sw.application
+description: "Offline-first community podcasting platform"
+fleetManagement: true
+data:
+  applicationEnvironmentVariables:
+    - POSTGRES_HOSTNAME: postgres
+    - POSTGRES_USERNAME: colmena
+    - POSTGRES_DB: colmena
+    - NEXTCLOUD_TRUSTED_DOMAINS: "*.local,192.168.*.*,10.*.*.*"
+    - NEXTCLOUD_ADMIN_USER: admin
+    - DEBUG: "false"
+    - ALLOWED_HOSTS: "*"
+  defaultDeviceType: raspberrypi4-64
+  supportedDeviceTypes:
+    - raspberrypi4-64
+    - raspberrypi3-64
+    - generic-amd64
+    - intel-nuc
+  fleet:
+    - colmena-production

@@ -1,0 +1,171 @@
+version: '2.4'
+
+services:
+  # ----------------------------------------------------------------------------
+  # Postgres (Database Service)
+  # ----------------------------------------------------------------------------
+  postgres:
+    image: postgres:13-alpine
+    command: postgres -c 'max_connections=100' -c 'shared_buffers=256MB'
+    hostname: ${POSTGRES_HOSTNAME:-postgres}
+    environment:
+      - POSTGRES_USER=${POSTGRES_USERNAME:-colmena}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-colmena}
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - colmena_devops
+    restart: unless-stopped
+    labels:
+      io.balena.features.supervisor-api: '1'
+      io.balena.features.balena-api: '1'
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USERNAME:-colmena}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ----------------------------------------------------------------------------
+  # pgAdmin (Database Management UI)
+  # ----------------------------------------------------------------------------
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_DEFAULT_EMAIL:-admin@colmena.local}
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_DEFAULT_PASSWORD}
+      - PGADMIN_CONFIG_SERVER_MODE=False
+      - PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED=False
+      - PGADMIN_LISTEN_PORT=80
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - colmena_devops
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    labels:
+      io.balena.features.supervisor-api: '1'
+
+  # ----------------------------------------------------------------------------
+  # Nextcloud Service
+  # ----------------------------------------------------------------------------
+  nextcloud:
+    image: ${CI_REGISTRY_IMAGE:-registry.gitlab.com/colmena-project/colmena-os}/nextcloud:latest
+    networks:
+      colmena_devops:
+        ipv4_address: 172.20.0.10
+    volumes:
+      - nextcloud_data:/var/www/html
+      - nextcloud_config:/var/www/html/config
+      - nextcloud_apps:/var/www/html/custom_apps
+    ports:
+      - "${NEXTCLOUD_HTTP_PORT:-8003}:80"
+      - "${NEXTCLOUD_API_PORT:-8004}:5001"
+    environment:
+      - NEXTCLOUD_TRUSTED_DOMAINS=${NEXTCLOUD_TRUSTED_DOMAINS:-colmena.local,localhost,*.local,192.168.*.*,10.*.*.*}
+      - NEXTCLOUD_ADMIN_USER=${NEXTCLOUD_ADMIN_USER:-admin}
+      - NEXTCLOUD_ADMIN_PASSWORD=${NEXTCLOUD_ADMIN_PASSWORD}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=${POSTGRES_DB:-colmena}
+      - POSTGRES_USER=${POSTGRES_USERNAME:-colmena}  
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - OVERWRITEPROTOCOL=http
+      - OVERWRITECLIURL=http://colmena.local:${NEXTCLOUD_HTTP_PORT:-8003}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    labels:
+      io.balena.features.supervisor-api: '1'
+      io.balena.features.balena-api: '1'
+      io.balena.features.dbus: '1'
+
+  # ----------------------------------------------------------------------------
+  # Mail Service (Mailcrab)  
+  # ----------------------------------------------------------------------------
+  mail:
+    image: ${CI_REGISTRY_IMAGE:-registry.gitlab.com/colmena-project/colmena-os}/mailcrab:latest
+    ports:
+      - "${MAILCRAB_WEB_PORT:-1080}:1080"
+      - "${MAILCRAB_SMTP_PORT:-1025}:1025"
+    networks:
+      - colmena_devops
+    restart: unless-stopped
+    labels:
+      io.balena.features.supervisor-api: '1'
+
+  # ----------------------------------------------------------------------------
+  # Colmena Backend
+  # ----------------------------------------------------------------------------
+  backend:
+    image: ${CI_REGISTRY_IMAGE:-registry.gitlab.com/colmena-project/colmena-os}/backend:latest
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USERNAME:-colmena}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-colmena}
+      - SECRET_KEY=${SECRET_KEY}
+      - DEBUG=${DEBUG:-false}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-colmena.local,localhost,*.local,*}
+      - EMAIL_HOST=mail
+      - EMAIL_PORT=1025
+      - EMAIL_USE_TLS=false
+      - NEXTCLOUD_URL=http://nextcloud
+      - NEXTCLOUD_USERNAME=${NEXTCLOUD_ADMIN_USER:-admin}
+      - NEXTCLOUD_PASSWORD=${NEXTCLOUD_ADMIN_PASSWORD}
+      - MEDIA_ROOT=/app/media
+      - STATIC_ROOT=/app/static
+    volumes:
+      - media_data:/app/media
+      - static_data:/app/static
+    networks:
+      - colmena_devops
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mail:
+        condition: service_started
+      nextcloud:
+        condition: service_started
+    restart: unless-stopped
+    labels:
+      io.balena.features.supervisor-api: '1'
+      io.balena.features.balena-api: '1'
+      io.balena.features.dbus: '1'
+
+  # ----------------------------------------------------------------------------
+  # Colmena Frontend & Reverse Proxy
+  # ----------------------------------------------------------------------------  
+  frontend:
+    image: ${CI_REGISTRY_IMAGE:-registry.gitlab.com/colmena-project/colmena-os}/frontend:latest
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    environment:
+      - API_URL=http://backend:8000
+      - NEXTCLOUD_URL=http://nextcloud
+    networks:
+      - colmena_devops
+    depends_on:
+      - backend
+    restart: unless-stopped
+    labels:
+      io.balena.features.supervisor-api: '1'
+
+# Define the network for all services to communicate
+networks:
+  colmena_devops:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.20.0.0/16
+
+# Define named volumes for persistent data storage
+volumes:
+  pg_data:
+  pgadmin_data:
+  nextcloud_data:
+  media_data:
