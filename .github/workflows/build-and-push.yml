@@ -324,7 +324,7 @@ jobs:
             --network host \
             -e DATABASE_URL=postgresql://testuser:testpassword@localhost:5432/testdb \
             -e SECRET_KEY=test-secret-key-for-ci \
-            -e DEBUG=True \
+            -e DEBUG=1 \
             -e LOG_LEVEL=DEBUG \
             -e NEXTCLOUD_URL=http://localhost \
             -e NEXTCLOUD_API_URL=http://localhost/ocs/v2.php \
