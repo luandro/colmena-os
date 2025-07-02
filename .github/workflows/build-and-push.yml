@@ -212,41 +212,128 @@ jobs:
           username: ${{ env.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Start Nextcloud service
+        run: |
+          echo "🔄 Pulling devops/Nextcloud image..."
+          docker pull ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-devops:${{ github.sha }}
+
+          echo "🔍 Verifying PostgreSQL is ready..."
+          PGPASSWORD=testpassword psql -h localhost -U testuser -d testdb -c "SELECT version();" || {
+            echo "❌ PostgreSQL connection failed"
+            exit 1
+          }
+
+          echo "🚀 Starting Nextcloud service..."
+          docker run -d \
+            --name colmena-nextcloud \
+            --network host \
+            -e POSTGRES_DB=testdb \
+            -e POSTGRES_USER=testuser \
+            -e POSTGRES_PASSWORD=testpassword \
+            -e POSTGRES_HOST=localhost \
+            -e NEXTCLOUD_ADMIN_USER=admin \
+            -e NEXTCLOUD_ADMIN_PASSWORD=admin123 \
+            -e NEXTCLOUD_TRUSTED_DOMAINS=localhost \
+            -p 80:80 \
+            -p 5001:5001 \
+            ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-devops:${{ github.sha }}
+
+          echo "✅ Nextcloud container started"
+          docker ps -a --filter name=colmena-nextcloud
+
+      - name: Wait for Nextcloud to be ready
+        run: |
+          echo "⏳ Waiting for Nextcloud to be ready..."
+          max_attempts=30
+          attempt=0
+
+          while [ $attempt -lt $max_attempts ]; do
+            if curl -f http://localhost/status.php >/dev/null 2>&1; then
+              echo "✅ Nextcloud is ready!"
+              break
+            fi
+
+            attempt=$((attempt + 1))
+            echo "Attempt $attempt/$max_attempts - Nextcloud not ready yet, waiting..."
+            if [ $((attempt % 5)) -eq 0 ]; then
+              echo "📋 Nextcloud container logs (last 10 lines):"
+              docker logs --tail 10 colmena-nextcloud
+            fi
+            sleep 10
+          done
+
+          if [ $attempt -eq $max_attempts ]; then
+            echo "❌ Nextcloud failed to start within timeout"
+            echo "📋 Full Nextcloud logs:"
+            docker logs colmena-nextcloud
+            echo "🔍 Container status:"
+            docker ps -a --filter name=colmena-nextcloud
+            exit 1
+          fi
+
       - name: Start backend service
         run: |
-          # Pull the backend image that was just built
+          echo "🔄 Pulling backend image..."
           docker pull ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-backend:${{ github.sha }}
 
-          # Start the backend service
+          echo "🚀 Starting backend service..."
           docker run -d \
             --name colmena-backend \
             --network host \
             -e DATABASE_URL=postgresql://testuser:testpassword@localhost:5432/testdb \
             -e SECRET_KEY=test-secret-key-for-ci \
+            -e DEBUG=True \
+            -e LOG_LEVEL=DEBUG \
+            -e NEXTCLOUD_URL=http://localhost \
+            -e NEXTCLOUD_API_URL=http://localhost/ocs/v2.php \
+            -e NEXTCLOUD_API_WRAPPER_URL=http://localhost:5001 \
+            -e NEXTCLOUD_ADMIN_USER=admin \
+            -e NEXTCLOUD_ADMIN_PASSWORD=admin123 \
             -p 8000:8000 \
             ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-backend:${{ github.sha }}
 
+          echo "✅ Backend container started"
+          docker ps -a --filter name=colmena-backend
+
       - name: Wait for backend to be ready
         run: |
-          echo "Waiting for backend to start..."
+          echo "⏳ Waiting for backend to be ready..."
           max_attempts=30
           attempt=0
 
           while [ $attempt -lt $max_attempts ]; do
             if curl -f http://localhost:8000/api/schema >/dev/null 2>&1; then
               echo "✅ Backend is ready!"
+              echo "📋 Schema preview:"
               curl -s http://localhost:8000/api/schema | head -20
               break
             fi
 
             attempt=$((attempt + 1))
             echo "Attempt $attempt/$max_attempts - Backend not ready yet, waiting..."
+
+            # Show logs every 5 attempts for debugging
+            if [ $((attempt % 5)) -eq 0 ]; then
+              echo "📋 Backend container logs (last 15 lines):"
+              docker logs --tail 15 colmena-backend
+              echo "🔍 Container status:"
+              docker ps -a --filter name=colmena-backend
+              echo "🌐 Network connectivity test:"
+              curl -v http://localhost:8000/admin/ 2>&1 | head -10 || echo "Connection failed"
+            fi
             sleep 10
           done
 
           if [ $attempt -eq $max_attempts ]; then
             echo "❌ Backend failed to start within timeout"
+            echo "📋 Full backend logs:"
             docker logs colmena-backend
+            echo "📋 Nextcloud logs (last 20 lines):"
+            docker logs --tail 20 colmena-nextcloud
+            echo "🔍 All containers status:"
+            docker ps -a
+            echo "🌐 Port usage:"
+            netstat -tlnp | grep -E ':(80|8000|5432|5001)'
             exit 1
           fi
 
@@ -320,11 +407,13 @@ jobs:
           rm -rf /tmp/.buildx-cache-frontend
           mv /tmp/.buildx-cache-frontend-new /tmp/.buildx-cache-frontend
 
-      - name: Cleanup backend service
+      - name: Cleanup services
         if: always()
         run: |
-          docker stop colmena-backend || true
-          docker rm colmena-backend || true
+          echo "🧹 Cleaning up services..."
+          docker stop colmena-backend colmena-nextcloud || true
+          docker rm colmena-backend colmena-nextcloud || true
+          echo "✅ Services cleaned up"
 
   notify-completion:
     needs: [prepare, build-backend-devops, build-frontend]
