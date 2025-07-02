@@ -323,10 +323,17 @@ jobs:
             --name colmena-backend \
             --network host \
             -e DATABASE_URL=postgresql://testuser:testpassword@localhost:5432/testdb \
+            -e POSTGRES_HOST=localhost \
+            -e POSTGRES_PORT=5432 \
+            -e POSTGRES_DB=testdb \
+            -e POSTGRES_USER=testuser \
+            -e POSTGRES_PASSWORD=testpassword \
             -e COLMENA_SECRET_KEY=test-secret-key-for-ci-minimum-50-characters-long-random-string-here \
             -e DEBUG=1 \
             -e LOG_LEVEL=DEBUG \
             -e DJANGO_SETTINGS_MODULE=colmena.settings.prod \
+            -e CSRF_TRUSTED_ORIGINS=http://localhost:3000,http://localhost:8000 \
+            -e CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8000 \
             -e NEXTCLOUD_URL=http://localhost \
             -e NEXTCLOUD_API_URL=http://localhost/ocs/v2.php \
             -e NEXTCLOUD_API_WRAPPER_URL=http://localhost:5001 \
@@ -345,7 +352,7 @@ jobs:
           if docker ps --filter name=colmena-backend --filter status=running --quiet | grep -q .; then
             echo "✅ Container is running"
             echo "🔍 Checking environment variables in container..."
-            docker exec colmena-backend env | grep -E "(COLMENA_SECRET_KEY|SECRET_KEY|DEBUG|DATABASE_URL)" || echo "Environment variables not found"
+            docker exec colmena-backend env | grep -E "(COLMENA_SECRET_KEY|DEBUG|DATABASE_URL|POSTGRES_|CSRF_|CORS_)" || echo "Environment variables not found"
           else
             echo "❌ Container is not running, checking logs..."
             docker logs colmena-backend
