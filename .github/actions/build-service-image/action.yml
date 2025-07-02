@@ -1,0 +1,119 @@
+name: 'Build Service Docker Image'
+description: 'Builds and pushes a ColmenaOS service Docker image with multi-arch support'
+inputs:
+  service:
+    description: 'Service name (frontend, backend, devops)'
+    required: true
+  platforms:
+    description: 'Target platforms'
+    required: false
+    default: 'linux/amd64,linux/arm64'
+  registry:
+    description: 'Docker registry'
+    required: false
+    default: 'docker.io'
+  registry-username:
+    description: 'Registry username'
+    required: true
+  registry-password:
+    description: 'Registry password/token'
+    required: true
+  push:
+    description: 'Push image to registry'
+    required: false
+    default: 'true'
+  tag-suffix:
+    description: 'Tag suffix (e.g., -dev, -pr123)'
+    required: false
+    default: ''
+  github-sha:
+    description: 'GitHub commit SHA'
+    required: true
+
+outputs:
+  image-name:
+    description: 'Full image name with tag'
+    value: ${{ steps.image-meta.outputs.image-name }}
+  image-digest:
+    description: 'Image digest'
+    value: ${{ steps.build.outputs.digest }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Determine Dockerfile and context
+      id: dockerfile-meta
+      shell: bash
+      run: |
+        case "${{ inputs.service }}" in
+          frontend)
+            echo "context=./frontend" >> $GITHUB_OUTPUT
+            echo "dockerfile=./frontend/devops/builder/Dockerfile.local" >> $GITHUB_OUTPUT
+            ;;
+          backend)
+            echo "context=./backend" >> $GITHUB_OUTPUT  
+            echo "dockerfile=./backend/devops/builder/Dockerfile" >> $GITHUB_OUTPUT
+            ;;
+          devops)
+            echo "context=./colmena-devops" >> $GITHUB_OUTPUT
+            if [ -f "./colmena-devops/devops/apps/nextcloud/builder/Dockerfile" ]; then
+              echo "dockerfile=./colmena-devops/devops/apps/nextcloud/builder/Dockerfile" >> $GITHUB_OUTPUT
+            else
+              echo "dockerfile=./colmena-devops/Dockerfile" >> $GITHUB_OUTPUT
+            fi
+            ;;
+          *)
+            echo "❌ Unknown service: ${{ inputs.service }}"
+            exit 1
+            ;;
+        esac
+
+    - name: Generate image metadata
+      id: image-meta
+      shell: bash
+      run: |
+        image_name="${{ inputs.registry }}/${{ inputs.registry-username }}/colmena-${{ inputs.service }}"
+        tag_latest="${image_name}:latest${{ inputs.tag-suffix }}"
+        tag_sha="${image_name}:${{ inputs.github-sha }}"
+        
+        echo "image-name=$image_name" >> $GITHUB_OUTPUT
+        echo "tag-latest=$tag_latest" >> $GITHUB_OUTPUT
+        echo "tag-sha=$tag_sha" >> $GITHUB_OUTPUT
+
+    - name: Login to registry
+      if: inputs.push == 'true'
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ inputs.registry }}
+        username: ${{ inputs.registry-username }}
+        password: ${{ inputs.registry-password }}
+
+    - name: Build and push Docker image
+      id: build
+      uses: docker/build-push-action@v6
+      with:
+        context: ${{ steps.dockerfile-meta.outputs.context }}
+        file: ${{ steps.dockerfile-meta.outputs.dockerfile }}
+        platforms: ${{ inputs.platforms }}
+        push: ${{ inputs.push }}
+        tags: |
+          ${{ steps.image-meta.outputs.tag-latest }}
+          ${{ steps.image-meta.outputs.tag-sha }}
+        labels: |
+          org.opencontainers.image.title=ColmenaOS ${{ inputs.service }}
+          org.opencontainers.image.description=ColmenaOS ${{ inputs.service }} service for offline-first community radio
+          org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          org.opencontainers.image.revision=${{ inputs.github-sha }}
+          org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+          org.opencontainers.image.version=${{ inputs.github-sha }}
+        cache-from: type=gha,scope=${{ inputs.service }}
+        cache-to: type=gha,mode=max,scope=${{ inputs.service }}
+
+    - name: Output build results
+      shell: bash
+      run: |
+        echo "✅ Built ${{ inputs.service }} image successfully"
+        echo "🏷️ Latest tag: ${{ steps.image-meta.outputs.tag-latest }}"
+        echo "🏷️ SHA tag: ${{ steps.image-meta.outputs.tag-sha }}"
+        echo "🔗 Digest: ${{ steps.build.outputs.digest }}"
+        echo "📦 Platforms: ${{ inputs.platforms }}"

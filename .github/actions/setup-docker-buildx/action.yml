@@ -1,0 +1,40 @@
+name: 'Setup Docker Buildx for Multi-Arch'
+description: 'Sets up Docker Buildx with QEMU for multi-architecture builds'
+inputs:
+  platforms:
+    description: 'Target platforms for build'
+    required: false
+    default: 'linux/amd64,linux/arm64'
+  cache-from:
+    description: 'Cache source'
+    required: false
+    default: 'type=gha'
+  cache-to:
+    description: 'Cache destination'
+    required: false
+    default: 'type=gha,mode=max'
+
+outputs:
+  platforms:
+    description: 'Configured platforms'
+    value: ${{ inputs.platforms }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up QEMU for multi-arch builds
+      uses: docker/setup-qemu-action@v3
+      with:
+        platforms: ${{ inputs.platforms }}
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      with:
+        platforms: ${{ inputs.platforms }}
+
+    - name: Output configuration
+      shell: bash
+      run: |
+        echo "✅ Docker Buildx configured for: ${{ inputs.platforms }}"
+        echo "🔄 Cache from: ${{ inputs.cache-from }}"
+        echo "💾 Cache to: ${{ inputs.cache-to }}"

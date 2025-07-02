@@ -1,0 +1,193 @@
+name: 'Deploy to Balena Fleet'
+description: 'Deploys ColmenaOS to a Balena Cloud fleet'
+inputs:
+  balena-token:
+    description: 'Balena Cloud authentication token'
+    required: true
+  fleet-name:
+    description: 'Balena fleet name'
+    required: true
+  deployment-notes:
+    description: 'Deployment notes'
+    required: false
+    default: 'Automated deployment from GitHub Actions'
+  wait-for-completion:
+    description: 'Wait for deployment to complete'
+    required: false
+    default: 'true'
+  timeout-minutes:
+    description: 'Deployment timeout in minutes'
+    required: false
+    default: '30'
+  dry-run:
+    description: 'Perform dry run only'
+    required: false
+    default: 'false'
+
+outputs:
+  release-id:
+    description: 'Balena release ID'
+    value: ${{ steps.deploy.outputs.release-id }}
+  release-commit:
+    description: 'Release commit hash'
+    value: ${{ steps.deploy.outputs.release-commit }}
+  device-count:
+    description: 'Number of devices in fleet'
+    value: ${{ steps.status.outputs.device-count }}
+  online-devices:
+    description: 'Number of online devices'
+    value: ${{ steps.status.outputs.online-devices }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install Balena CLI
+      shell: bash
+      run: |
+        echo "📦 Installing Balena CLI..."
+        curl -fsSL https://github.com/balena-io/balena-cli/releases/latest/download/balena-cli-linux-x64-standalone.zip -o balena-cli.zip
+        unzip balena-cli.zip >/dev/null 2>&1
+        sudo mv balena-cli/* /usr/local/bin/
+        balena version
+
+    - name: Login to Balena Cloud
+      shell: bash
+      run: |
+        echo "🔐 Logging into Balena Cloud..."
+        echo "${{ inputs.balena-token }}" | balena login --token
+
+    - name: Validate deployment
+      shell: bash
+      run: |
+        echo "🔍 Validating deployment configuration..."
+        
+        # Check balena.yml exists
+        if [ ! -f "balena.yml" ]; then
+          echo "❌ balena.yml not found"
+          exit 1
+        fi
+        
+        # Check fleet exists
+        if ! balena fleets | grep -q "${{ inputs.fleet-name }}"; then
+          echo "❌ Fleet '${{ inputs.fleet-name }}' not found or not accessible"
+          exit 1
+        fi
+        
+        # Validate configuration
+        balena push --dry-run "${{ inputs.fleet-name }}"
+        echo "✅ Deployment validation passed"
+
+    - name: Deploy to Balena
+      id: deploy
+      shell: bash
+      run: |
+        if [ "${{ inputs.dry-run }}" = "true" ]; then
+          echo "🧪 Performing dry run deployment..."
+          balena push --dry-run "${{ inputs.fleet-name }}"
+          echo "✅ Dry run completed successfully"
+          exit 0
+        fi
+        
+        echo "🚀 Deploying to Balena fleet: ${{ inputs.fleet-name }}"
+        
+        # Prepare deployment notes
+        deployment_notes="${{ inputs.deployment-notes }}
+        
+        📝 Additional Info:
+        🔨 Triggered by: ${{ github.event_name }}
+        👤 Actor: ${{ github.actor }}
+        📦 Repository: ${{ github.repository }}
+        🌿 Ref: ${{ github.ref }}
+        📋 SHA: ${{ github.sha }}
+        ⏰ Time: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+        
+        # Deploy to Balena
+        balena push "${{ inputs.fleet-name }}" \
+          --source . \
+          --logs \
+          --detached \
+          --note "$deployment_notes"
+
+    - name: Wait for deployment completion
+      if: inputs.wait-for-completion == 'true' && inputs.dry-run != 'true'
+      shell: bash
+      run: |
+        echo "⏳ Waiting for deployment to complete (timeout: ${{ inputs.timeout-minutes }} minutes)..."
+        
+        timeout $((${{ inputs.timeout-minutes }} * 60)) bash -c '
+          consecutive_stable=0
+          required_stable_checks=3
+          
+          while true; do
+            devices=$(balena devices --fleet "${{ inputs.fleet-name }}" --json 2>/dev/null || echo "[]")
+            total_devices=$(echo "$devices" | jq length)
+            
+            if [ "$total_devices" -eq 0 ]; then
+              echo "⚠️ No devices found in fleet"
+              sleep 30
+              continue
+            fi
+            
+            online_devices=$(echo "$devices" | jq "[.[] | select(.status == \"online\")] | length")
+            updating_devices=$(echo "$devices" | jq "[.[] | select(.status == \"updating\")] | length")
+            
+            echo "📊 Fleet status: $online_devices/$total_devices online, $updating_devices updating"
+            
+            if [ "$updating_devices" -eq 0 ] && [ "$online_devices" -eq "$total_devices" ]; then
+              consecutive_stable=$((consecutive_stable + 1))
+              echo "✅ All devices stable (check $consecutive_stable/$required_stable_checks)"
+              
+              if [ "$consecutive_stable" -ge "$required_stable_checks" ]; then
+                echo "🎉 Deployment completed successfully!"
+                break
+              fi
+            else
+              consecutive_stable=0
+            fi
+            
+            sleep 30
+          done
+        ' || {
+          echo "⚠️ Deployment timeout reached"
+          echo "💡 Check Balena dashboard for current status: https://dashboard.balena-cloud.com/fleets/${{ inputs.fleet-name }}"
+          exit 1
+        }
+
+    - name: Get deployment status
+      id: status
+      if: inputs.dry-run != 'true'
+      shell: bash
+      run: |
+        echo "📊 Getting final deployment status..."
+        
+        # Get release information
+        releases=$(balena releases --fleet "${{ inputs.fleet-name }}" --json 2>/dev/null || echo "[]")
+        if [ "$(echo "$releases" | jq length)" -gt 0 ]; then
+          latest_release=$(echo "$releases" | jq -r '.[0]')
+          release_id=$(echo "$latest_release" | jq -r '.id')
+          release_commit=$(echo "$latest_release" | jq -r '.commit')
+          
+          echo "release-id=$release_id" >> $GITHUB_OUTPUT
+          echo "release-commit=$release_commit" >> $GITHUB_OUTPUT
+        fi
+        
+        # Get device information
+        devices=$(balena devices --fleet "${{ inputs.fleet-name }}" --json 2>/dev/null || echo "[]")
+        device_count=$(echo "$devices" | jq length)
+        online_devices=$(echo "$devices" | jq "[.[] | select(.status == \"online\")] | length")
+        
+        echo "device-count=$device_count" >> $GITHUB_OUTPUT
+        echo "online-devices=$online_devices" >> $GITHUB_OUTPUT
+        
+        echo "📋 Final Status:"
+        echo "  - Release ID: $release_id"
+        echo "  - Release Commit: $release_commit"
+        echo "  - Devices: $online_devices/$device_count online"
+
+    - name: Cleanup
+      if: always()
+      shell: bash
+      run: |
+        echo "🧹 Cleaning up..."
+        rm -f balena-cli.zip
+        # Note: We don't logout from Balena CLI as it might be needed for subsequent steps
