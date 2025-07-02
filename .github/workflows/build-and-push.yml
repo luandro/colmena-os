@@ -218,10 +218,13 @@ jobs:
           docker pull ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-devops:${{ github.sha }}
 
           echo "🔍 Verifying PostgreSQL is ready..."
-          PGPASSWORD=testpassword psql -h localhost -U testuser -d testdb -c "SELECT version();" || {
-            echo "❌ PostgreSQL connection failed"
-            exit 1
-          }
+          # Use docker to test PostgreSQL connection since psql client isn't installed on runner
+          docker run --rm --network host -e PGPASSWORD=testpassword postgres:13 \
+            psql -h localhost -U testuser -d testdb -c "SELECT version();" \
+            || {
+              echo "❌ PostgreSQL connection failed"
+              exit 1
+            }
 
           echo "🚀 Starting Nextcloud service..."
           docker run -d \
