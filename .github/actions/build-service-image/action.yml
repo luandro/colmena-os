@@ -99,6 +99,11 @@ runs:
         tags: |
           ${{ steps.image-meta.outputs.tag-latest }}
           ${{ steps.image-meta.outputs.tag-sha }}
+        build-args: |
+          ${{ inputs.service == 'devops' && 'NEXTCLOUD_VERSION=28.0.3' || '' }}
+          ${{ inputs.service == 'devops' && 'NEXTCLOUD_API_WRAPPER_PORT=5001' || '' }}
+          ${{ inputs.service == 'devops' && 'APACHE_APP_PATH=/var/www/nc_api_wrapper' || '' }}
+          ${{ inputs.service == 'frontend' && 'OPENAPI_SCHEMA_LOCATION=http://backend:8000/api/schema' || '' }}
         labels: |
           org.opencontainers.image.title=ColmenaOS ${{ inputs.service }}
           org.opencontainers.image.description=ColmenaOS ${{ inputs.service }} service for offline-first community radio

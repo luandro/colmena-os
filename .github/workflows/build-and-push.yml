@@ -173,6 +173,11 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-${{ matrix.service }}:latest${{ needs.prepare.outputs.tag_suffix }}
             ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-${{ matrix.service }}:${{ github.sha }}
+          build-args: |
+            ${{ matrix.service == 'devops' && 'NEXTCLOUD_VERSION=28.0.3' || '' }}
+            ${{ matrix.service == 'devops' && 'NEXTCLOUD_API_WRAPPER_PORT=5001' || '' }}
+            ${{ matrix.service == 'devops' && 'APACHE_APP_PATH=/var/www/nc_api_wrapper' || '' }}
+            ${{ matrix.service == 'frontend' && 'OPENAPI_SCHEMA_LOCATION=http://backend:8000/api/schema' || '' }}
           labels: |
             org.opencontainers.image.title=ColmenaOS ${{ matrix.service }}
             org.opencontainers.image.description=ColmenaOS ${{ matrix.service }} service
