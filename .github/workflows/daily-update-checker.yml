@@ -35,10 +35,10 @@ jobs:
         id: check_changes
         run: |
           echo "Checking for submodule updates..."
-          
+
           # Update submodules to latest
           git submodule update --remote --merge
-          
+
           # Check if there are any changes
           if git diff --quiet HEAD HEAD~1 -- .gitmodules || git diff --quiet --submodule; then
             if [ "${{ inputs.force_build }}" = "true" ]; then
@@ -53,20 +53,20 @@ jobs:
             echo "Changes detected in submodules"
             echo "has_changes=true" >> $GITHUB_OUTPUT
           fi
-          
+
           # Check which submodules changed
           if git diff --quiet HEAD~1 -- frontend; then
             echo "frontend_changed=false" >> $GITHUB_OUTPUT
           else
             echo "frontend_changed=true" >> $GITHUB_OUTPUT
           fi
-          
+
           if git diff --quiet HEAD~1 -- backend; then
             echo "backend_changed=false" >> $GITHUB_OUTPUT
           else
             echo "backend_changed=true" >> $GITHUB_OUTPUT
           fi
-          
+
           if git diff --quiet HEAD~1 -- colmena-devops; then
             echo "devops_changed=false" >> $GITHUB_OUTPUT
           else
@@ -82,11 +82,11 @@ jobs:
           git commit -m "Auto-update submodules
 
           🤖 Automated submodule update
-          
+
           - Frontend: ${{ steps.check_changes.outputs.frontend_changed == 'true' && '✅ Updated' || '⏭️ No changes' }}
-          - Backend: ${{ steps.check_changes.outputs.backend_changed == 'true' && '✅ Updated' || '⏭️ No changes' }}  
+          - Backend: ${{ steps.check_changes.outputs.backend_changed == 'true' && '✅ Updated' || '⏭️ No changes' }}
           - DevOps: ${{ steps.check_changes.outputs.devops_changed == 'true' && '✅ Updated' || '⏭️ No changes' }}
-          
+
           Triggered by: ${{ github.event_name }}"
           git push
 

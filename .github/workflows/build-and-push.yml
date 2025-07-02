@@ -53,11 +53,11 @@ jobs:
             if [ "${{ github.event.client_payload.devops_changed }}" = "true" ]; then
               services+=("devops")
             fi
-            
+
             if [ ${#services[@]} -eq 0 ]; then
               services=("frontend" "backend" "devops")  # Fallback
             fi
-            
+
             services_json=$(printf '%s\n' "${services[@]}" | jq -R . | jq -s .)
           elif [ "${{ inputs.services }}" != "" ] && [ "${{ inputs.services }}" != "all" ]; then
             # Use input services
@@ -67,7 +67,7 @@ jobs:
             # Build all services
             services_json='["frontend", "backend", "devops"]'
           fi
-          
+
           echo "services=$services_json" >> $GITHUB_OUTPUT
           echo "Services to build: $services_json"
 
@@ -91,12 +91,12 @@ jobs:
             echo "platforms=linux/amd64,linux/arm64" >> $GITHUB_OUTPUT
           fi
 
-  build:
+  build-backend-devops:
     needs: prepare
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: ${{ fromJson(needs.prepare.outputs.services) }}
+        service: [backend, devops]
       fail-fast: false
     steps:
       - name: Checkout code with submodules
@@ -137,24 +137,12 @@ jobs:
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Prepare OpenAPI schema for frontend build
-        if: matrix.service == 'frontend'
-        run: |
-          # Copy the OpenAPI schema into frontend build context
-          mkdir -p frontend/src/api
-          cp backend/apps/nextcloud/openapi/schema.json frontend/src/api/schema.json
-          echo "✅ OpenAPI schema copied to frontend build context"
-
       - name: Determine Dockerfile path
         id: dockerfile
         run: |
           case "${{ matrix.service }}" in
-            frontend)
-              echo "path=./frontend" >> $GITHUB_OUTPUT
-              echo "dockerfile=./frontend/devops/builder/Dockerfile.local" >> $GITHUB_OUTPUT
-              ;;
             backend)
-              echo "path=./backend" >> $GITHUB_OUTPUT  
+              echo "path=./backend" >> $GITHUB_OUTPUT
               echo "dockerfile=./backend/devops/builder/Dockerfile" >> $GITHUB_OUTPUT
               ;;
             devops)
@@ -196,21 +184,160 @@ jobs:
           cache-from: type=local,src=/tmp/.buildx-cache-${{ matrix.service }}
           cache-to: type=local,dest=/tmp/.buildx-cache-${{ matrix.service }}-new,mode=max
 
-
       - name: Move cache
         run: |
           rm -rf /tmp/.buildx-cache-${{ matrix.service }}
           mv /tmp/.buildx-cache-${{ matrix.service }}-new /tmp/.buildx-cache-${{ matrix.service }}
 
+  start-backend:
+    needs: [prepare, build-backend-devops]
+    runs-on: ubuntu-latest
+    if: contains(fromJson(needs.prepare.outputs.services), 'frontend') && contains(fromJson(needs.prepare.outputs.services), 'backend')
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_USER: testuser
+          POSTGRES_DB: testdb
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Start backend service
+        run: |
+          # Pull the backend image that was just built
+          docker pull ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-backend:${{ github.sha }}
+
+          # Start the backend service
+          docker run -d \
+            --name colmena-backend \
+            --network host \
+            -e DATABASE_URL=postgresql://testuser:testpassword@localhost:5432/testdb \
+            -e SECRET_KEY=test-secret-key-for-ci \
+            -p 8000:8000 \
+            ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-backend:${{ github.sha }}
+
+      - name: Wait for backend to be ready
+        run: |
+          echo "Waiting for backend to start..."
+          max_attempts=30
+          attempt=0
+
+          while [ $attempt -lt $max_attempts ]; do
+            if curl -f http://localhost:8000/api/schema >/dev/null 2>&1; then
+              echo "✅ Backend is ready!"
+              curl -s http://localhost:8000/api/schema | head -20
+              break
+            fi
+
+            attempt=$((attempt + 1))
+            echo "Attempt $attempt/$max_attempts - Backend not ready yet, waiting..."
+            sleep 10
+          done
+
+          if [ $attempt -eq $max_attempts ]; then
+            echo "❌ Backend failed to start within timeout"
+            docker logs colmena-backend
+            exit 1
+          fi
+
+  build-frontend:
+    needs: [prepare, start-backend]
+    runs-on: ubuntu-latest
+    if: contains(fromJson(needs.prepare.outputs.services), 'frontend')
+    steps:
+      - name: Checkout code with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up QEMU for multi-arch builds
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache-frontend
+          key: ${{ runner.os }}-buildx-frontend-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-frontend-
+
+      - name: Login to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-frontend
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push frontend Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/devops/builder/Dockerfile.local
+          platforms: ${{ needs.prepare.outputs.platforms }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-frontend:latest${{ needs.prepare.outputs.tag_suffix }}
+            ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-frontend:${{ github.sha }}
+          build-args: |
+            OPENAPI_SCHEMA_LOCATION=http://172.17.0.1:8000/api/schema
+          network: host
+          labels: |
+            org.opencontainers.image.title=ColmenaOS frontend
+            org.opencontainers.image.description=ColmenaOS frontend service
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+          cache-from: type=local,src=/tmp/.buildx-cache-frontend
+          cache-to: type=local,dest=/tmp/.buildx-cache-frontend-new,mode=max
+
+      - name: Move cache
+        run: |
+          rm -rf /tmp/.buildx-cache-frontend
+          mv /tmp/.buildx-cache-frontend-new /tmp/.buildx-cache-frontend
+
+      - name: Cleanup backend service
+        if: always()
+        run: |
+          docker stop colmena-backend || true
+          docker rm colmena-backend || true
+
   notify-completion:
-    needs: [prepare, build]
+    needs: [prepare, build-backend-devops, build-frontend]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Determine build status
         id: status
         run: |
-          if [ "${{ needs.build.result }}" = "success" ]; then
+          backend_devops_result="${{ needs.build-backend-devops.result }}"
+          frontend_result="${{ needs.build-frontend.result }}"
+
+          if [[ "$backend_devops_result" == "success" ]] && [[ "$frontend_result" == "success" || "$frontend_result" == "skipped" ]]; then
             echo "status=success" >> $GITHUB_OUTPUT
             echo "message=✅ All Docker images built and pushed successfully" >> $GITHUB_OUTPUT
           else
@@ -240,15 +367,15 @@ jobs:
             const status = "${{ steps.status.outputs.status }}";
             const message = "${{ steps.status.outputs.message }}";
             const services = ${{ needs.prepare.outputs.services }};
-            
+
             const body = `## 🐳 Docker Build Status: ${status === 'success' ? '✅ SUCCESS' : '❌ FAILED'}
-            
+
             ${message}
-            
+
             **Services built:** ${services.join(', ')}
             **Platforms:** ${{ needs.prepare.outputs.platforms }}
             **Commit:** \`${{ github.sha }}\``;
-            
+
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
