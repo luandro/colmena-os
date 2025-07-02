@@ -137,6 +137,18 @@ jobs:
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
 
+      - name: Start mock backend for frontend build
+        if: matrix.service == 'frontend'
+        run: |
+          # Start a simple HTTP server to serve the OpenAPI schema
+          cd backend/apps/nextcloud/openapi
+          python3 -m http.server 8000 &
+          echo $! > /tmp/mock_server.pid
+          # Wait for server to start
+          sleep 2
+          # Test that schema is accessible
+          curl -f http://localhost:8000/schema.json || exit 1
+
       - name: Determine Dockerfile path
         id: dockerfile
         run: |
@@ -174,10 +186,11 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-${{ matrix.service }}:latest${{ needs.prepare.outputs.tag_suffix }}
             ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-${{ matrix.service }}:${{ github.sha }}
           build-args: |
-            ${{ matrix.service == 'devops' && 'NEXTCLOUD_VERSION=28.0.3' || '' }}
-            ${{ matrix.service == 'devops' && 'NEXTCLOUD_API_WRAPPER_PORT=5001' || '' }}
-            ${{ matrix.service == 'devops' && 'APACHE_APP_PATH=/var/www/nc_api_wrapper' || '' }}
-            ${{ matrix.service == 'frontend' && 'OPENAPI_SCHEMA_LOCATION=http://backend:8000/api/schema' || '' }}
+            NEXTCLOUD_VERSION=28.0.3
+            NEXTCLOUD_API_WRAPPER_PORT=5001
+            APACHE_APP_PATH=/var/www/nc_api_wrapper
+            BUILD_CONTEXT=devops/apps/nextcloud/builder
+            OPENAPI_SCHEMA_LOCATION=${{ matrix.service == 'frontend' && 'http://host.docker.internal:8000/schema.json' || 'http://backend:8000/api/schema' }}
           labels: |
             org.opencontainers.image.title=ColmenaOS ${{ matrix.service }}
             org.opencontainers.image.description=ColmenaOS ${{ matrix.service }} service
@@ -186,6 +199,14 @@ jobs:
             org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
           cache-from: type=local,src=/tmp/.buildx-cache-${{ matrix.service }}
           cache-to: type=local,dest=/tmp/.buildx-cache-${{ matrix.service }}-new,mode=max
+
+      - name: Cleanup mock backend
+        if: matrix.service == 'frontend' && always()
+        run: |
+          if [ -f /tmp/mock_server.pid ]; then
+            kill $(cat /tmp/mock_server.pid) || true
+            rm /tmp/mock_server.pid
+          fi
 
       - name: Move cache
         run: |
