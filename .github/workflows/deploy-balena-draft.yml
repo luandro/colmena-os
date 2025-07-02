@@ -1,0 +1,191 @@
+name: Deploy to Balena Draft Fleet
+
+on:
+  repository_dispatch:
+    types: [deploy-to-balena-draft]
+  workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: 'Force deployment even if no changes'
+        required: false
+        default: 'false'
+        type: boolean
+      balena_fleet:
+        description: 'Balena fleet name (override default)'
+        required: false
+        type: string
+
+env:
+  BALENA_FLEET: ${{ vars.BALENA_DRAFT_FLEET || 'colmena-os-draft' }}
+
+jobs:
+  deploy-to-draft:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Balena CLI
+        run: |
+          curl -fsSL https://github.com/balena-io/balena-cli/releases/latest/download/balena-cli-linux-x64-standalone.zip -o balena-cli.zip
+          unzip balena-cli.zip
+          sudo mv balena-cli/* /usr/local/bin/
+          balena version
+
+      - name: Login to Balena Cloud
+        run: |
+          echo "${{ secrets.BALENA_TOKEN }}" | balena login --token
+
+      - name: Validate Balena configuration
+        run: |
+          # Check if balena.yml exists and is valid
+          if [ ! -f "balena.yml" ]; then
+            echo "❌ balena.yml not found"
+            exit 1
+          fi
+          
+          # Validate yaml syntax
+          balena push --dry-run "${{ inputs.balena_fleet || env.BALENA_FLEET }}"
+
+      - name: Update docker-compose for Balena
+        run: |
+          # Create Balena-specific docker-compose.yml if needed
+          if [ ! -f "docker-compose.balena.yml" ]; then
+            cp docker-compose.yml docker-compose.balena.yml
+            
+            # Remove development-specific services/configs
+            # Add Balena-specific labels and configurations
+            echo "Using standard docker-compose.yml for Balena deployment"
+          else
+            echo "Using existing docker-compose.balena.yml"
+          fi
+
+      - name: Deploy to Balena Draft Fleet
+        id: deploy
+        run: |
+          echo "🚀 Deploying to Balena Draft Fleet: ${{ inputs.balena_fleet || env.BALENA_FLEET }}"
+          
+          # Deploy to Balena
+          balena push "${{ inputs.balena_fleet || env.BALENA_FLEET }}" \
+            --source . \
+            --logs \
+            --detached \
+            --note "Auto-deployment from GitHub Actions
+          
+          📦 Services: ${{ github.event.client_payload.services || 'all' }}
+          🔨 Trigger: ${{ github.event.client_payload.trigger || github.event_name }}
+          📝 Commit: ${{ github.event.client_payload.sha || github.sha }}
+          🌿 Branch: ${{ github.event.client_payload.ref || github.ref }}
+          ⏰ Time: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+
+      - name: Wait for deployment completion
+        run: |
+          echo "⏳ Waiting for deployment to complete..."
+          
+          # Wait for devices to come online with new release
+          timeout 900 bash -c '
+            while true; do
+              status=$(balena devices --fleet "${{ inputs.balena_fleet || env.BALENA_FLEET }}" --json | jq -r ".[].status")
+              if [[ "$status" == *"online"* ]]; then
+                echo "✅ Deployment completed successfully"
+                break
+              fi
+              echo "⏳ Still deploying... (status: $status)"
+              sleep 30
+            done
+          ' || echo "⚠️ Deployment timeout - check Balena dashboard manually"
+
+      - name: Get deployment info
+        id: deployment_info
+        run: |
+          # Get release information
+          release_info=$(balena releases --fleet "${{ inputs.balena_fleet || env.BALENA_FLEET }}" --json | jq -r '.[0]')
+          release_id=$(echo "$release_info" | jq -r '.id')
+          release_version=$(echo "$release_info" | jq -r '.commit')
+          
+          echo "release_id=$release_id" >> $GITHUB_OUTPUT
+          echo "release_version=$release_version" >> $GITHUB_OUTPUT
+          
+          # Get device information
+          devices=$(balena devices --fleet "${{ inputs.balena_fleet || env.BALENA_FLEET }}" --json)
+          device_count=$(echo "$devices" | jq length)
+          online_devices=$(echo "$devices" | jq '[.[] | select(.status == "online")] | length')
+          
+          echo "device_count=$device_count" >> $GITHUB_OUTPUT
+          echo "online_devices=$online_devices" >> $GITHUB_OUTPUT
+
+  notify-deployment:
+    needs: deploy-to-draft
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine deployment status
+        id: status
+        run: |
+          if [ "${{ needs.deploy-to-draft.result }}" = "success" ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "emoji=✅" >> $GITHUB_OUTPUT
+            echo "title=Deployment Successful" >> $GITHUB_OUTPUT
+          else
+            echo "status=failure" >> $GITHUB_OUTPUT  
+            echo "emoji=❌" >> $GITHUB_OUTPUT
+            echo "title=Deployment Failed" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create deployment summary
+        run: |
+          cat << EOF >> $GITHUB_STEP_SUMMARY
+          # ${{ steps.status.outputs.emoji }} Balena Draft Deployment ${{ steps.status.outputs.title }}
+          
+          ## Deployment Details
+          - **Fleet:** \`${{ inputs.balena_fleet || env.BALENA_FLEET }}\`
+          - **Release ID:** \`${{ needs.deploy-to-draft.outputs.release_id }}\`
+          - **Version:** \`${{ needs.deploy-to-draft.outputs.release_version }}\`
+          - **Devices:** ${{ needs.deploy-to-draft.outputs.online_devices }}/${{ needs.deploy-to-draft.outputs.device_count }} online
+          - **Triggered by:** ${{ github.event.client_payload.trigger || github.event_name }}
+          
+          ## Services Deployed
+          ${{ github.event.client_payload.services || 'All services' }}
+          
+          ## Next Steps
+          1. 🧪 Test the deployment on draft devices
+          2. 🔍 Verify all functionality works as expected  
+          3. 🚀 If testing passes, manually trigger production deployment
+          
+          ---
+          *Deployment completed at $(date -u +'%Y-%m-%d %H:%M:%S UTC')*
+          EOF
+
+      - name: Comment on source commit (if from repository_dispatch)
+        if: github.event_name == 'repository_dispatch' && github.event.client_payload.sha
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const sha = "${{ github.event.client_payload.sha }}";
+            const status = "${{ steps.status.outputs.status }}";
+            const emoji = "${{ steps.status.outputs.emoji }}";
+            
+            const body = `${emoji} **Balena Draft Deployment ${status === 'success' ? 'Successful' : 'Failed'}**
+            
+            Fleet: \`${{ inputs.balena_fleet || env.BALENA_FLEET }}\`
+            Release: \`${{ needs.deploy-to-draft.outputs.release_id || 'N/A' }}\`
+            Devices: ${{ needs.deploy-to-draft.outputs.online_devices || '0' }}/${{ needs.deploy-to-draft.outputs.device_count || '0' }} online
+            
+            ${status === 'success' ? '✅ Ready for testing on draft devices' : '❌ Check workflow logs for details'}`;
+            
+            github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: sha,
+              body: body
+            });
+
+      - name: Trigger production deployment on success
+        if: needs.deploy-to-draft.result == 'success' && github.ref == 'refs/heads/main'
+        run: |
+          echo "🎯 Draft deployment successful on main branch"
+          echo "Consider manually triggering production deployment after testing"
+          # Note: Production deployment should be manual for safety

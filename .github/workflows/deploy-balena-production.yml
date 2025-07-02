@@ -1,0 +1,275 @@
+name: Deploy to Balena Production Fleet
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Release version/tag to deploy'
+        required: true
+        type: string
+      deployment_notes:
+        description: 'Deployment notes'
+        required: false
+        default: 'Production deployment via GitHub Actions'
+        type: string
+      confirm_production:
+        description: 'Type "CONFIRM" to proceed with production deployment'
+        required: true
+        type: string
+  release:
+    types: [published]
+
+env:
+  BALENA_PRODUCTION_FLEET: ${{ vars.BALENA_PRODUCTION_FLEET || 'colmena-os-production' }}
+
+jobs:
+  validate-deployment:
+    runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.validation.outputs.should_deploy }}
+      release_tag: ${{ steps.validation.outputs.release_tag }}
+    steps:
+      - name: Validate production deployment request
+        id: validation
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ inputs.confirm_production }}" != "CONFIRM" ]; then
+              echo "❌ Production deployment not confirmed"
+              echo "should_deploy=false" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+            echo "release_tag=${{ inputs.release_version }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "release" ]; then
+            echo "release_tag=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "should_deploy=true" >> $GITHUB_OUTPUT
+          echo "✅ Production deployment validated"
+
+      - name: Check release exists
+        run: |
+          if ! git tag | grep -q "^${{ steps.validation.outputs.release_tag }}$"; then
+            echo "❌ Release tag ${{ steps.validation.outputs.release_tag }} not found"
+            exit 1
+          fi
+          echo "✅ Release tag ${{ steps.validation.outputs.release_tag }} exists"
+
+  deploy-to-production:
+    needs: validate-deployment
+    if: needs.validate-deployment.outputs.should_deploy == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://dashboard.balena-cloud.com/fleets/${{ env.BALENA_PRODUCTION_FLEET }}
+    steps:
+      - name: Checkout release
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate-deployment.outputs.release_tag }}
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Balena CLI
+        run: |
+          curl -fsSL https://github.com/balena-io/balena-cli/releases/latest/download/balena-cli-linux-x64-standalone.zip -o balena-cli.zip
+          unzip balena-cli.zip
+          sudo mv balena-cli/* /usr/local/bin/
+          balena version
+
+      - name: Login to Balena Cloud
+        run: |
+          echo "${{ secrets.BALENA_PRODUCTION_TOKEN }}" | balena login --token
+
+      - name: Pre-deployment checks
+        run: |
+          echo "🔍 Running pre-deployment checks..."
+          
+          # Validate balena.yml
+          if [ ! -f "balena.yml" ]; then
+            echo "❌ balena.yml not found"
+            exit 1
+          fi
+          
+          # Check fleet exists and is accessible
+          if ! balena fleets | grep -q "${{ env.BALENA_PRODUCTION_FLEET }}"; then
+            echo "❌ Production fleet ${{ env.BALENA_PRODUCTION_FLEET }} not accessible"
+            exit 1
+          fi
+          
+          # Dry run to validate configuration
+          balena push --dry-run "${{ env.BALENA_PRODUCTION_FLEET }}"
+          
+          echo "✅ Pre-deployment checks passed"
+
+      - name: Create deployment backup point
+        id: backup
+        run: |
+          echo "📋 Creating deployment backup point..."
+          
+          # Get current production release info
+          current_release=$(balena releases --fleet "${{ env.BALENA_PRODUCTION_FLEET }}" --json | jq -r '.[0]')
+          current_id=$(echo "$current_release" | jq -r '.id')
+          current_commit=$(echo "$current_release" | jq -r '.commit')
+          
+          echo "current_release_id=$current_id" >> $GITHUB_OUTPUT
+          echo "current_commit=$current_commit" >> $GITHUB_OUTPUT
+          
+          echo "📋 Current production release: $current_id ($current_commit)"
+
+      - name: Deploy to Balena Production Fleet
+        id: deploy
+        run: |
+          echo "🚀 Deploying ${{ needs.validate-deployment.outputs.release_tag }} to Production Fleet: ${{ env.BALENA_PRODUCTION_FLEET }}"
+          
+          deployment_notes="${{ inputs.deployment_notes || 'Production release deployment' }}"
+          
+          balena push "${{ env.BALENA_PRODUCTION_FLEET }}" \
+            --source . \
+            --logs \
+            --detached \
+            --note "🚀 PRODUCTION DEPLOYMENT
+          
+          📦 Release: ${{ needs.validate-deployment.outputs.release_tag }}
+          📝 Notes: $deployment_notes
+          👤 Deployed by: ${{ github.actor }}
+          ⏰ Time: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+          🔄 Previous: ${{ steps.backup.outputs.current_commit }}
+          🎯 Trigger: ${{ github.event_name }}"
+
+      - name: Monitor deployment progress
+        run: |
+          echo "⏳ Monitoring deployment progress..."
+          
+          # Wait for deployment to complete with extended timeout for production
+          timeout 1800 bash -c '
+            consecutive_online=0
+            while true; do
+              devices=$(balena devices --fleet "${{ env.BALENA_PRODUCTION_FLEET }}" --json)
+              total_devices=$(echo "$devices" | jq length)
+              online_devices=$(echo "$devices" | jq "[.[] | select(.status == \"online\")] | length")
+              
+              echo "📊 Devices: $online_devices/$total_devices online"
+              
+              if [ "$online_devices" -eq "$total_devices" ] && [ "$total_devices" -gt 0 ]; then
+                consecutive_online=$((consecutive_online + 1))
+                if [ "$consecutive_online" -ge 3 ]; then
+                  echo "✅ All devices online and stable for 3 consecutive checks"
+                  break
+                fi
+              else
+                consecutive_online=0
+              fi
+              
+              sleep 60  # Check every minute for production
+            done
+          ' || {
+            echo "⚠️ Deployment monitoring timeout - manual verification needed"
+            exit 1
+          }
+
+      - name: Post-deployment verification
+        run: |
+          echo "🔍 Running post-deployment verification..."
+          
+          # Get final deployment status
+          devices=$(balena devices --fleet "${{ env.BALENA_PRODUCTION_FLEET }}" --json)
+          total_devices=$(echo "$devices" | jq length)
+          online_devices=$(echo "$devices" | jq "[.[] | select(.status == \"online\")] | length")
+          
+          if [ "$online_devices" -ne "$total_devices" ]; then
+            echo "❌ Not all devices are online: $online_devices/$total_devices"
+            exit 1
+          fi
+          
+          echo "✅ Production deployment verification successful"
+          echo "📊 All $total_devices devices are online and running the new release"
+
+      - name: Get final deployment info
+        id: deployment_info
+        run: |
+          # Get new release information
+          release_info=$(balena releases --fleet "${{ env.BALENA_PRODUCTION_FLEET }}" --json | jq -r '.[0]')
+          release_id=$(echo "$release_info" | jq -r '.id')
+          release_commit=$(echo "$release_info" | jq -r '.commit')
+          
+          echo "new_release_id=$release_id" >> $GITHUB_OUTPUT
+          echo "new_release_commit=$release_commit" >> $GITHUB_OUTPUT
+          
+          # Get device count
+          devices=$(balena devices --fleet "${{ env.BALENA_PRODUCTION_FLEET }}" --json)
+          device_count=$(echo "$devices" | jq length)
+          
+          echo "device_count=$device_count" >> $GITHUB_OUTPUT
+
+  notify-production-deployment:
+    needs: [validate-deployment, deploy-to-production]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine deployment status
+        id: status
+        run: |
+          if [ "${{ needs.deploy-to-production.result }}" = "success" ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "emoji=🎉" >> $GITHUB_OUTPUT
+            echo "title=Production Deployment Successful" >> $GITHUB_OUTPUT
+          else
+            echo "status=failure" >> $GITHUB_OUTPUT
+            echo "emoji=🚨" >> $GITHUB_OUTPUT
+            echo "title=Production Deployment Failed" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create deployment summary
+        run: |
+          cat << EOF >> $GITHUB_STEP_SUMMARY
+          # ${{ steps.status.outputs.emoji }} ${{ steps.status.outputs.title }}
+          
+          ## Production Deployment Details
+          - **Fleet:** \`${{ env.BALENA_PRODUCTION_FLEET }}\`
+          - **Release Version:** \`${{ needs.validate-deployment.outputs.release_tag }}\`
+          - **New Release ID:** \`${{ needs.deploy-to-production.outputs.new_release_id || 'N/A' }}\`
+          - **Devices Updated:** ${{ needs.deploy-to-production.outputs.device_count || '0' }}
+          - **Deployed by:** ${{ github.actor }}
+          - **Deployment Time:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+          
+          ## Deployment Notes
+          ${{ inputs.deployment_notes || 'Production release deployment' }}
+          
+          ## Rollback Information
+          - **Previous Release ID:** \`${{ needs.deploy-to-production.outputs.current_release_id || 'N/A' }}\`
+          - **Previous Commit:** \`${{ needs.deploy-to-production.outputs.current_commit || 'N/A' }}\`
+          
+          ---
+          *${{ steps.status.outputs.status == 'success' && '✅ Production deployment completed successfully' || '❌ Production deployment failed - check logs and consider rollback' }}*
+          EOF
+
+      - name: Create GitHub release comment
+        if: github.event_name == 'release'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const status = "${{ steps.status.outputs.status }}";
+            const emoji = "${{ steps.status.outputs.emoji }}";
+            
+            const body = `${emoji} **Production deployment ${status}**
+            
+            - Fleet: \`${{ env.BALENA_PRODUCTION_FLEET }}\`
+            - Devices: ${{ needs.deploy-to-production.outputs.device_count || '0' }}
+            - Release ID: \`${{ needs.deploy-to-production.outputs.new_release_id || 'N/A' }}\`
+            
+            ${status === 'success' ? '🎉 ColmenaOS is now live in production!' : '🚨 Deployment failed - investigate immediately'}`;
+            
+            github.rest.repos.createReleaseComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: context.payload.release.id,
+              body: body
+            });
+
+      - name: Send failure notification
+        if: needs.deploy-to-production.result == 'failure'
+        run: |
+          echo "🚨 CRITICAL: Production deployment failed!"
+          echo "🔄 Consider rolling back to previous release if necessary"
+          echo "📋 Previous release ID: ${{ needs.deploy-to-production.outputs.current_release_id }}"
+          # Add webhook/email notification here for production failures

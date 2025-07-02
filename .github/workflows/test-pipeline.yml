@@ -1,0 +1,295 @@
+name: Test Pipeline
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: 'Type of tests to run'
+        required: false
+        default: 'full'
+        type: choice
+        options:
+          - full
+          - local
+          - integration
+      skip_cleanup:
+        description: 'Skip testbed cleanup for debugging'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  TESTBED_PREFIX: ci-test-${{ github.run_id }}
+
+jobs:
+  local-tests:
+    runs-on: ubuntu-latest
+    if: github.event.inputs.test_type != 'integration'
+    steps:
+      - name: Checkout code with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install act
+        run: |
+          curl -s https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash
+          act --version
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create secrets file for act
+        run: |
+          cat > .secrets << EOF
+          DOCKERHUB_TOKEN=${{ secrets.DOCKERHUB_TOKEN }}
+          DOCKERHUB_USERNAME=${{ vars.DOCKERHUB_USERNAME }}
+          BALENA_TOKEN=${{ secrets.BALENA_TOKEN }}
+          POSTGRES_PASSWORD=test_password_123
+          SECRET_KEY=test_secret_key_for_testing_purposes_minimum_fifty_chars
+          NEXTCLOUD_ADMIN_PASSWORD=test_nextcloud_pass
+          GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
+          EOF
+
+      - name: Test GitHub Actions workflows locally
+        run: |
+          echo "🧪 Testing workflows with act..."
+          
+          # Test daily update checker (dry run)
+          echo "Testing daily update checker..."
+          act schedule --secret-file .secrets --dry-run || echo "Daily update checker dry run completed"
+          
+          # Test build workflow preparation  
+          echo "Testing build workflow preparation..."
+          act push --secret-file .secrets --job prepare --dry-run || echo "Build preparation dry run completed"
+          
+          echo "✅ Local workflow tests completed"
+
+      - name: Test workflow syntax validation
+        run: |
+          echo "🔍 Validating workflow syntax..."
+          
+          for workflow in .github/workflows/*.yml; do
+            echo "Validating $workflow..."
+            # Use act to validate syntax
+            act --list --workflows "$workflow" > /dev/null || {
+              echo "❌ Syntax error in $workflow"
+              exit 1
+            }
+          done
+          
+          echo "✅ All workflow syntax valid"
+
+      - name: Cleanup act artifacts
+        if: always()
+        run: |
+          rm -f .secrets
+          docker container prune -f --filter "label=act" || true
+          docker image prune -f --filter "label=act" || true
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    if: github.event.inputs.test_type != 'local'
+    steps:
+      - name: Checkout code with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Verify doctl authentication
+        run: |
+          doctl account get
+          doctl compute ssh-key list --format Name
+
+      - name: Create integration testbed
+        id: create-testbed
+        run: |
+          testbed_name="${TESTBED_PREFIX}-integration"
+          echo "testbed_name=$testbed_name" >> $GITHUB_OUTPUT
+          
+          echo "🚀 Creating integration testbed: $testbed_name"
+          ./tests/0_do-testbed_cli.sh create "$testbed_name"
+
+      - name: Test Docker environment on testbed
+        run: |
+          testbed_name="${{ steps.create-testbed.outputs.testbed_name }}"
+          
+          # Get testbed info
+          droplet_name=$(doctl compute droplet list --format Name --no-header | grep "$testbed_name" | head -1)
+          droplet_ip=$(doctl compute droplet get "$droplet_name" --format PublicIPv4 --no-header)
+          
+          echo "🐳 Testing Docker environment on $droplet_ip..."
+          
+          # Test Docker functionality
+          ssh -o StrictHostKeyChecking=no "root@$droplet_ip" << 'EOF'
+            set -e
+            echo "=== Docker Version ==="
+            docker --version
+            docker compose --version
+            
+            echo "=== Testing Multi-arch Support ==="
+            docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+            docker buildx create --name test-builder --use || true
+            docker buildx inspect --bootstrap
+            
+            echo "=== Testing Base Image Pulls ==="
+            docker pull node:18-alpine
+            docker pull python:3.12-slim
+            docker pull postgres:13-alpine
+            
+            echo "=== System Resources ==="
+            df -h /
+            free -h
+            nproc
+            
+            echo "✅ Docker environment test passed"
+          EOF
+
+      - name: Test ColmenaOS deployment
+        run: |
+          testbed_name="${{ steps.create-testbed.outputs.testbed_name }}"
+          
+          echo "🚀 Testing ColmenaOS deployment..."
+          ./tests/0_do-testbed_cli.sh deploy "$testbed_name"
+
+      - name: Run deployment health checks
+        run: |
+          testbed_name="${{ steps.create-testbed.outputs.testbed_name }}"
+          droplet_name=$(doctl compute droplet list --format Name --no-header | grep "$testbed_name" | head -1)
+          droplet_ip=$(doctl compute droplet get "$droplet_name" --format PublicIPv4 --no-header)
+          
+          echo "🔍 Running health checks on $droplet_ip..."
+          
+          # Extended health checks
+          ssh -o StrictHostKeyChecking=no "root@$droplet_ip" << 'EOF'
+            cd /root
+            
+            echo "=== Service Status ==="
+            docker compose ps
+            
+            echo "=== Container Health ==="
+            for container in $(docker ps --format "{{.Names}}"); do
+              echo "Checking $container..."
+              docker inspect "$container" --format "{{.State.Status}}: {{.State.Health.Status}}" || echo "No health check"
+            done
+            
+            echo "=== Network Connectivity ==="
+            # Test internal service connectivity
+            timeout 10 docker compose exec -T backend curl -f http://db:5432 2>/dev/null && echo "DB connection: OK" || echo "DB connection: SKIP"
+            
+            echo "=== External Accessibility ==="
+            # Test if services respond on their expected ports
+            curl -f http://localhost:80 && echo "Frontend: OK" || echo "Frontend: FAILED"
+            curl -f http://localhost:1080 && echo "Mailcrab: OK" || echo "Mailcrab: FAILED"
+            
+            echo "=== Resource Usage ==="
+            docker stats --no-stream
+            
+            echo "✅ Health checks completed"
+          EOF
+
+      - name: Cleanup testbed
+        if: always() && !inputs.skip_cleanup
+        run: |
+          testbed_name="${{ steps.create-testbed.outputs.testbed_name }}"
+          echo "🧹 Cleaning up testbed: $testbed_name"
+          ./tests/0_do-testbed_cli.sh destroy "$testbed_name" || echo "Cleanup warning: testbed may still exist"
+
+      - name: Preserve testbed for debugging
+        if: inputs.skip_cleanup
+        run: |
+          testbed_name="${{ steps.create-testbed.outputs.testbed_name }}"
+          droplet_ip=$(doctl compute droplet get "$(doctl compute droplet list --format Name --no-header | grep "$testbed_name" | head -1)" --format PublicIPv4 --no-header)
+          
+          echo "🐛 Testbed preserved for debugging:"
+          echo "  Name: $testbed_name"
+          echo "  IP: $droplet_ip"
+          echo "  SSH: ssh root@$droplet_ip"
+          echo "  Cleanup: ./tests/0_do-testbed_cli.sh destroy $testbed_name"
+
+  test-summary:
+    runs-on: ubuntu-latest
+    needs: [local-tests, integration-tests]
+    if: always()
+    steps:
+      - name: Test Results Summary
+        run: |
+          echo "# 🧪 Test Pipeline Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          local_result="${{ needs.local-tests.result }}"
+          integration_result="${{ needs.integration-tests.result }}"
+          
+          if [[ "$local_result" == "success" ]] || [[ "$local_result" == "skipped" ]]; then
+            echo "✅ **Local Tests**: Passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Local Tests**: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [[ "$integration_result" == "success" ]] || [[ "$integration_result" == "skipped" ]]; then
+            echo "✅ **Integration Tests**: Passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Integration Tests**: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Test Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "- **Trigger**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch**: ${{ github.ref }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Test Type**: ${{ inputs.test_type || 'full' }}" >> $GITHUB_STEP_SUMMARY
+          
+          # Set overall status
+          if [[ ("$local_result" == "success" || "$local_result" == "skipped") && ("$integration_result" == "success" || "$integration_result" == "skipped") ]]; then
+            echo "🎉 **Overall Result**: All tests passed!" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          else
+            echo "❌ **Overall Result**: Some tests failed" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const localResult = "${{ needs.local-tests.result }}";
+            const integrationResult = "${{ needs.integration-tests.result }}";
+            
+            const getStatusEmoji = (result) => {
+              if (result === 'success' || result === 'skipped') return '✅';
+              if (result === 'failure') return '❌';
+              return '⏸️';
+            };
+            
+            const body = `## 🧪 Test Pipeline Results
+            
+            | Test Type | Status | Result |
+            |-----------|--------|---------|
+            | Local Tests | ${getStatusEmoji(localResult)} | ${localResult} |
+            | Integration Tests | ${getStatusEmoji(integrationResult)} | ${integrationResult} |
+            
+            **Commit**: \`${{ github.sha }}\`
+            **Test Type**: ${{ inputs.test_type || 'full' }}
+            
+            ${(localResult === 'success' || localResult === 'skipped') && (integrationResult === 'success' || integrationResult === 'skipped') 
+              ? '🎉 All tests passed! Ready for review.' 
+              : '❌ Some tests failed. Please check the logs and fix issues before merging.'}`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });

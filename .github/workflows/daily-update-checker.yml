@@ -1,0 +1,117 @@
+name: Daily Update Checker
+
+on:
+  schedule:
+    # Run daily at 6 AM UTC (adjust timezone as needed)
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Force build even if no changes detected'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+
+jobs:
+  check-updates:
+    runs-on: ubuntu-latest
+    outputs:
+      has_changes: ${{ steps.check_changes.outputs.has_changes }}
+      frontend_changed: ${{ steps.check_changes.outputs.frontend_changed }}
+      backend_changed: ${{ steps.check_changes.outputs.backend_changed }}
+      devops_changed: ${{ steps.check_changes.outputs.devops_changed }}
+    steps:
+      - name: Checkout code with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 2
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check for submodule changes
+        id: check_changes
+        run: |
+          echo "Checking for submodule updates..."
+          
+          # Update submodules to latest
+          git submodule update --remote --merge
+          
+          # Check if there are any changes
+          if git diff --quiet HEAD HEAD~1 -- .gitmodules || git diff --quiet --submodule; then
+            if [ "${{ inputs.force_build }}" = "true" ]; then
+              echo "No changes detected, but force build requested"
+              echo "has_changes=true" >> $GITHUB_OUTPUT
+            else
+              echo "No changes detected"
+              echo "has_changes=false" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+          else
+            echo "Changes detected in submodules"
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          fi
+          
+          # Check which submodules changed
+          if git diff --quiet HEAD~1 -- frontend; then
+            echo "frontend_changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "frontend_changed=true" >> $GITHUB_OUTPUT
+          fi
+          
+          if git diff --quiet HEAD~1 -- backend; then
+            echo "backend_changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "backend_changed=true" >> $GITHUB_OUTPUT
+          fi
+          
+          if git diff --quiet HEAD~1 -- colmena-devops; then
+            echo "devops_changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "devops_changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit submodule updates
+        if: steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add -A
+          git commit -m "Auto-update submodules
+
+          🤖 Automated submodule update
+          
+          - Frontend: ${{ steps.check_changes.outputs.frontend_changed == 'true' && '✅ Updated' || '⏭️ No changes' }}
+          - Backend: ${{ steps.check_changes.outputs.backend_changed == 'true' && '✅ Updated' || '⏭️ No changes' }}  
+          - DevOps: ${{ steps.check_changes.outputs.devops_changed == 'true' && '✅ Updated' || '⏭️ No changes' }}
+          
+          Triggered by: ${{ github.event_name }}"
+          git push
+
+  trigger-build:
+    needs: check-updates
+    if: needs.check-updates.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger build workflow
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          event-type: submodule-update
+          client-payload: |
+            {
+              "frontend_changed": "${{ needs.check-updates.outputs.frontend_changed }}",
+              "backend_changed": "${{ needs.check-updates.outputs.backend_changed }}",
+              "devops_changed": "${{ needs.check-updates.outputs.devops_changed }}",
+              "ref": "${{ github.ref }}",
+              "sha": "${{ github.sha }}"
+            }
+
+      - name: Send notification on failure
+        if: failure()
+        run: |
+          echo "⚠️ Daily update check failed!"
+          echo "Check the workflow logs for details."
+          # Add webhook notification here if desired
