@@ -323,10 +323,10 @@ jobs:
             --name colmena-backend \
             --network host \
             -e DATABASE_URL=postgresql://testuser:testpassword@127.0.0.1:5432/testdb \
-            -e POSTGRES_HOST=127.0.0.1 \
+            -e POSTGRES_HOSTNAME=127.0.0.1 \
             -e POSTGRES_PORT=5432 \
-            -e POSTGRES_DB=testdb \
-            -e POSTGRES_USER=testuser \
+            -e POSTGRES_DATABASE=testdb \
+            -e POSTGRES_USERNAME=testuser \
             -e POSTGRES_PASSWORD=testpassword \
             -e PGHOST=127.0.0.1 \
             -e PGPORT=5432 \
