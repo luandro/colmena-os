@@ -137,17 +137,13 @@ jobs:
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Start mock backend for frontend build
+      - name: Prepare OpenAPI schema for frontend build
         if: matrix.service == 'frontend'
         run: |
-          # Start a simple HTTP server to serve the OpenAPI schema
-          cd backend/apps/nextcloud/openapi
-          python3 -m http.server 8000 &
-          echo $! > /tmp/mock_server.pid
-          # Wait for server to start
-          sleep 2
-          # Test that schema is accessible
-          curl -f http://localhost:8000/schema.json || exit 1
+          # Copy the OpenAPI schema into frontend build context
+          mkdir -p frontend/src/api
+          cp backend/apps/nextcloud/openapi/schema.json frontend/src/api/schema.json
+          echo "✅ OpenAPI schema copied to frontend build context"
 
       - name: Determine Dockerfile path
         id: dockerfile
@@ -190,7 +186,7 @@ jobs:
             NEXTCLOUD_API_WRAPPER_PORT=5001
             APACHE_APP_PATH=/var/www/nc_api_wrapper
             BUILD_CONTEXT=devops/apps/nextcloud/builder
-            OPENAPI_SCHEMA_LOCATION=${{ matrix.service == 'frontend' && 'http://host.docker.internal:8000/schema.json' || 'http://backend:8000/api/schema' }}
+            OPENAPI_SCHEMA_LOCATION=${{ matrix.service == 'frontend' && 'file://./src/api/schema.json' || 'http://backend:8000/api/schema' }}
           labels: |
             org.opencontainers.image.title=ColmenaOS ${{ matrix.service }}
             org.opencontainers.image.description=ColmenaOS ${{ matrix.service }} service
@@ -200,13 +196,6 @@ jobs:
           cache-from: type=local,src=/tmp/.buildx-cache-${{ matrix.service }}
           cache-to: type=local,dest=/tmp/.buildx-cache-${{ matrix.service }}-new,mode=max
 
-      - name: Cleanup mock backend
-        if: matrix.service == 'frontend' && always()
-        run: |
-          if [ -f /tmp/mock_server.pid ]; then
-            kill $(cat /tmp/mock_server.pid) || true
-            rm /tmp/mock_server.pid
-          fi
 
       - name: Move cache
         run: |
