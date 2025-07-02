@@ -51,7 +51,7 @@ runs:
             echo "dockerfile=./frontend/devops/builder/Dockerfile.local" >> $GITHUB_OUTPUT
             ;;
           backend)
-            echo "context=./backend" >> $GITHUB_OUTPUT  
+            echo "context=./backend" >> $GITHUB_OUTPUT
             echo "dockerfile=./backend/devops/builder/Dockerfile" >> $GITHUB_OUTPUT
             ;;
           devops)
@@ -75,7 +75,7 @@ runs:
         image_name="${{ inputs.registry }}/${{ inputs.registry-username }}/colmena-${{ inputs.service }}"
         tag_latest="${image_name}:latest${{ inputs.tag-suffix }}"
         tag_sha="${image_name}:${{ inputs.github-sha }}"
-        
+
         echo "image-name=$image_name" >> $GITHUB_OUTPUT
         echo "tag-latest=$tag_latest" >> $GITHUB_OUTPUT
         echo "tag-sha=$tag_sha" >> $GITHUB_OUTPUT
