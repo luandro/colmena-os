@@ -425,6 +425,14 @@ jobs:
           submodules: recursive
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Copy OpenAPI schema for frontend build
+        run: |
+          echo "📋 Copying OpenAPI schema from backend to frontend..."
+          mkdir -p frontend/src/api
+          cp backend/apps/nextcloud/openapi/schema.json frontend/src/api/schema.json
+          echo "✅ Schema copied successfully"
+          ls -la frontend/src/api/schema.json
+
       - name: Set up QEMU for multi-arch builds
         uses: docker/setup-qemu-action@v3
 
@@ -468,8 +476,7 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-frontend:latest${{ needs.prepare.outputs.tag_suffix }}
             ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-frontend:${{ github.sha }}
           build-args: |
-            OPENAPI_SCHEMA_LOCATION=http://localhost:8000/api/schema
-          network: host
+            OPENAPI_SCHEMA_LOCATION=./src/api/schema.json
           labels: |
             org.opencontainers.image.title=ColmenaOS frontend
             org.opencontainers.image.description=ColmenaOS frontend service
