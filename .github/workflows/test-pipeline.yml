@@ -48,7 +48,7 @@ jobs:
         run: |
           cat > .secrets << EOF
           DOCKERHUB_TOKEN=${{ secrets.DOCKERHUB_TOKEN }}
-          DOCKERHUB_USERNAME=${{ vars.DOCKERHUB_USERNAME }}
+          DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }}
           BALENA_TOKEN=${{ secrets.BALENA_TOKEN }}
           POSTGRES_PASSWORD=test_password_123
           SECRET_KEY=test_secret_key_for_testing_purposes_minimum_fifty_chars

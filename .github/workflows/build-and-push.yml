@@ -21,7 +21,7 @@ on:
         type: string
 
 env:
-  DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
   REGISTRY: docker.io
 
 jobs:
