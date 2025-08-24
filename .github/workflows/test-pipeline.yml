@@ -218,9 +218,26 @@ jobs:
           echo "  SSH: ssh root@$droplet_ip"
           echo "  Cleanup: ./tests/0_do-testbed_cli.sh destroy $testbed_name"
 
+  unified-docker-tests:
+    runs-on: ubuntu-latest
+    if: github.event.inputs.test_type != 'integration'
+    steps:
+      - name: Checkout code with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Test Unified Docker Setup
+        run: |
+          echo "🧪 Testing Unified Docker Setup..."
+          chmod +x ./tests/test-unified.sh
+          ./tests/test-unified.sh
+          echo "✅ Unified Docker test completed successfully"
+
   test-summary:
     runs-on: ubuntu-latest
-    needs: [local-tests, integration-tests]
+    needs: [local-tests, integration-tests, unified-docker-tests]
     if: always()
     steps:
       - name: Test Results Summary
@@ -230,6 +247,7 @@ jobs:
 
           local_result="${{ needs.local-tests.result }}"
           integration_result="${{ needs.integration-tests.result }}"
+          unified_result="${{ needs.unified-docker-tests.result }}"
 
           if [[ "$local_result" == "success" ]] || [[ "$local_result" == "skipped" ]]; then
             echo "✅ **Local Tests**: Passed" >> $GITHUB_STEP_SUMMARY
@@ -241,6 +259,12 @@ jobs:
             echo "✅ **Integration Tests**: Passed" >> $GITHUB_STEP_SUMMARY
           else
             echo "❌ **Integration Tests**: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [[ "$unified_result" == "success" ]] || [[ "$unified_result" == "skipped" ]]; then
+            echo "✅ **Unified Docker Tests**: Passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Unified Docker Tests**: Failed" >> $GITHUB_STEP_SUMMARY
           fi
 
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -266,6 +290,7 @@ jobs:
           script: |
             const localResult = "${{ needs.local-tests.result }}";
             const integrationResult = "${{ needs.integration-tests.result }}";
+            const unifiedResult = "${{ needs.unified-docker-tests.result }}";
 
             const getStatusEmoji = (result) => {
               if (result === 'success' || result === 'skipped') return '✅';
@@ -279,11 +304,12 @@ jobs:
             |-----------|--------|---------|
             | Local Tests | ${getStatusEmoji(localResult)} | ${localResult} |
             | Integration Tests | ${getStatusEmoji(integrationResult)} | ${integrationResult} |
+            | Unified Docker Tests | ${getStatusEmoji(unifiedResult)} | ${unifiedResult} |
 
             **Commit**: \`${{ github.sha }}\`
             **Test Type**: ${{ inputs.test_type || 'full' }}
 
-            ${(localResult === 'success' || localResult === 'skipped') && (integrationResult === 'success' || integrationResult === 'skipped')
+            ${(localResult === 'success' || localResult === 'skipped') && (integrationResult === 'success' || integrationResult === 'skipped') && (unifiedResult === 'success' || unifiedResult === 'skipped')
               ? '🎉 All tests passed! Ready for review.'
               : '❌ Some tests failed. Please check the logs and fix issues before merging.'}`;
 
