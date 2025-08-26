@@ -1,0 +1,17 @@
+FROM alpine:3.18
+
+RUN apk add --no-cache \
+    curl \
+    tar \
+    gzip
+
+# Download and extract Mailcrab
+RUN curl -L https://github.com/sj26/mailcrab/releases/download/v0.4.0/mailcrab-0.4.0-linux-amd64.tar.gz -o mailcrab.tar.gz && \
+    tar -xzf mailcrab.tar.gz && \
+    mv mailcrab /usr/local/bin/mailcrab && \
+    chmod +x /usr/local/bin/mailcrab && \
+    rm mailcrab.tar.gz
+
+EXPOSE 1080 1025
+
+CMD ["mailcrab"]
