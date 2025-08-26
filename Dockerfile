@@ -1,19 +1,7 @@
 # Unified Dockerfile for ColmenaOS - Frontend + Backend in single container
 # Based on existing submodule Dockerfiles with supervisor process management
 
-# Stage 1: Frontend builder
-FROM node:20-alpine AS frontend-builder
-
-WORKDIR /app/frontend
-
-# Copy frontend files
-COPY frontend/package*.json ./
-COPY frontend/ ./
-
-# Install dependencies and build
-RUN npm ci && npm run build
-
-# Stage 2: Backend builder  
+# Stage 1: Backend builder  
 FROM python:3.10-alpine AS backend-builder
 
 WORKDIR /app/backend
@@ -41,6 +29,30 @@ RUN python -m openapi_python_generator \
     apps/nextcloud/openapi/schema.json \
     apps/nextcloud/openapi/client
 
+# Stage 2: Frontend builder with dynamic schema download
+FROM node:20-alpine AS frontend-builder
+
+WORKDIR /app/frontend
+
+# Install Python 3.10 and pip
+RUN apk add --no-cache python3 py3-pip curl
+
+# Copy all frontend files first
+COPY frontend/ ./
+
+# Install dependencies
+ENV OPENAPI_SCHEMA_LOCATION=skip
+RUN npm install --prefer-offline --no-audit --no-fund
+
+# Use existing schema file instead of generating during build
+ENV OPENAPI_SCHEMA_LOCATION=skip
+
+# Copy built backend from previous stage (for reference, not for schema generation)
+COPY --from=backend-builder /app/backend /app/backend
+
+# Build frontend using existing schema file
+RUN cd /app/frontend && npm run build
+
 # Stage 3: Final production image
 FROM python:3.10-alpine
 
@@ -61,8 +73,11 @@ COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist
 COPY --from=backend-builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
 COPY --from=backend-builder /app/backend /app/backend
 
-# Copy nginx configuration for frontend
-COPY frontend/devops/local/nginx/app /etc/nginx/conf.d/default.conf
+# Fix Django settings SECRET_KEY reference
+RUN sed -i 's/COLMENA_SECRET_KEY/SECRET_KEY/g' /app/backend/colmena/settings/prod.py
+
+# Copy nginx configuration for frontend  
+COPY frontend/devops/local/nginx/app /etc/nginx/http.d/default.conf
 
 # Copy backend entrypoint script
 COPY backend/devops/builder/entrypoint.sh /app/backend/entrypoint.sh
