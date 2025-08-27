@@ -103,7 +103,7 @@ BACKEND_PORT="${BACKEND_PORT:-8000}"
 
 echo "Running HTTP checks..."
 if [[ "$SKIP_APP_BUILD" != "true" ]]; then
-  curl -fsS --max-time 10 "http://localhost:${HTTP_PORT}/" >/div/null && echo "- Frontend OK on :${HTTP_PORT}" || {
+  curl -fsS --max-time 10 "http://localhost:${HTTP_PORT}/" >/dev/null && echo "- Frontend OK on :${HTTP_PORT}" || {
     echo "- Frontend check failed on :${HTTP_PORT}" >&2
     "${COMPOSE_CMD[@]}" logs --no-color --tail=100 colmena-app || true
     exit 1
