@@ -64,6 +64,10 @@ docker compose logs -f colmena-app  # Watch startup logs
 - **Nextcloud (Files)**: http://localhost:8003
 - **Mailcrab (Email)**: http://localhost:1080
 
+**Connect to a server:**
+- **Follow documentation**: [Documentation](https://docs.colmena.media/use/add-server/)
+-
+
 **📋 Default Login:**
 - **Email**: admin@colmena.org
 - **Password**: (set in .env as SUPERADMIN_PASSWORD)
