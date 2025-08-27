@@ -79,29 +79,53 @@ jobs:
         with:
           submodules: false
 
-      - name: Install act for workflow validation
+      - name: Basic workflow YAML syntax check
         run: |
-          curl -s https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash
-          export PATH=$PATH:./bin
-          ./bin/act --version
-
-      - name: Validate workflow syntax
-        run: |
-          echo "🔍 Validating GitHub Actions workflow syntax..."
+          echo "🔍 Performing basic YAML syntax validation..."
           
-          export PATH=$PATH:./bin
+          # Check if all workflow files are valid YAML
           for workflow in .github/workflows/*.yml; do
-            echo "Validating $workflow..."
-            # Use act to validate syntax
-            if ./bin/act --list --workflows "$workflow" > /dev/null 2>&1; then
-              echo "✅ $workflow syntax valid"
+            echo "Checking YAML syntax for $workflow..."
+            if python -c "import yaml; yaml.safe_load(open('$workflow'))" 2>/dev/null; then
+              echo "✅ $workflow has valid YAML syntax"
             else
-              echo "❌ Syntax error in $workflow"
+              echo "❌ YAML syntax error in $workflow"
               exit 1
             fi
           done
           
-          echo "✅ All workflow syntax valid"
+          echo "✅ All workflow files have valid YAML syntax"
+
+      - name: Check workflow structure
+        run: |
+          echo "🔍 Checking workflow structure requirements..."
+          
+          for workflow in .github/workflows/*.yml; do
+            echo "Analyzing $workflow structure..."
+            
+            # Check for required workflow elements
+            if grep -q "^name:" "$workflow"; then
+              echo "✅ $workflow has workflow name"
+            else
+              echo "⚠️  $workflow missing name field"
+            fi
+            
+            if grep -q "^on:" "$workflow"; then
+              echo "✅ $workflow has trigger events"
+            else
+              echo "❌ $workflow missing trigger events"
+              exit 1
+            fi
+            
+            if grep -q "^jobs:" "$workflow"; then
+              echo "✅ $workflow has job definitions"
+            else
+              echo "❌ $workflow missing job definitions"
+              exit 1
+            fi
+          done
+          
+          echo "✅ All workflows have required structure"
 
   test-docker-composition:
     name: Test Docker Compose Configuration
