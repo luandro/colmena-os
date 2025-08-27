@@ -119,14 +119,17 @@ services:
       - "${HTTP_PORT:-80}:80"
       - "${BACKEND_PORT:-8000}:8000"
     environment:
+      - STAGE=prod
       - DATABASE_URL=postgresql://${POSTGRES_USER:-colmena}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-colmena}
       - SECRET_KEY=${SECRET_KEY}
       - DEBUG=${DEBUG:-false}
       - ALLOWED_HOSTS=${ALLOWED_HOSTS:-colmena.local,localhost,*.local,*}
+      - CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS:-http://localhost:8080}
       - EMAIL_HOST=mail
       - EMAIL_PORT=1025
       - EMAIL_USE_TLS=false
       - NEXTCLOUD_URL=http://nextcloud
+      - NEXTCLOUD_API_WRAPPER_URL=http://nextcloud:5001
       - NEXTCLOUD_USERNAME=${NEXTCLOUD_ADMIN_USER:-admin}
       - NEXTCLOUD_PASSWORD=${NEXTCLOUD_ADMIN_PASSWORD}
       - MEDIA_ROOT=/app/backend/media

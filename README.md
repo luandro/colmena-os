@@ -39,35 +39,54 @@ ColmenaOS consists of multiple services orchestrated via Docker Compose:
 
 ## 🚀 Quick Start
 
-### Option 1: Deploy with Balena (Recommended for Production)
-
-1. **Sign up** for [Balena Cloud](https://dashboard.balena-cloud.com/signup)
-2. **Create** a new fleet for your device type
-3. **Add** this project:
-   ```bash
-   git clone https://github.com/colmena-project/colmena-os.git
-   cd colmena-os
-   git submodule update --init --recursive
-   balena push <your-fleet-name>
-   ```
-4. **Download** and flash the OS image to your device
-5. **Boot** - ColmenaOS will auto-provision and start
-
-### Option 2: Local Development with Docker Compose
+### Option 1: Local Development (Recommended for Testing)
 
 ```bash
 # Clone with submodules
 git clone --recursive https://github.com/colmena-project/colmena-os.git
 cd colmena-os
 
-# Copy environment template
+# Copy and configure environment
 cp .env.example .env
-# Edit .env with your configuration
+# Edit .env file - replace all CHANGE_ME values with secure passwords
 
-# Start services
+# Start all services
 docker compose up -d
 
-# Access at http://localhost
+# Wait for services to start (about 2-3 minutes)
+docker compose logs -f colmena-app  # Watch startup logs
+```
+
+**🌐 Access Your Services:**
+- **Frontend (Main App)**: http://localhost:8080
+- **Backend API**: http://localhost:8000
+- **pgAdmin (Database)**: http://localhost:5050
+- **Nextcloud (Files)**: http://localhost:8003
+- **Mailcrab (Email)**: http://localhost:1080
+
+**📋 Default Login:**
+- **Email**: admin@colmena.org
+- **Password**: (set in .env as SUPERADMIN_PASSWORD)
+
+### Option 2: Production Deployment with Balena
+
+```bash
+# Install Balena CLI
+npm install -g balena-cli
+
+# Login and create fleet
+balena login
+balena fleet create myfleet
+
+# Deploy to fleet
+git clone --recursive https://github.com/colmena-project/colmena-os.git
+cd colmena-os
+balena push myfleet
+
+# Flash device and boot
+balena os download raspberrypi4-64 --version latest
+balena os configure downloaded-image.img --fleet myfleet
+balena local flash downloaded-image.img
 ```
 
 ## 📋 Requirements
@@ -78,9 +97,17 @@ docker compose up -d
 - **Supported Devices**: Raspberry Pi 4, Intel NUC, generic x86_64
 
 ### Software
-- Docker & Docker Compose (for local development)
-- Balena CLI (for Balena deployments)
-- Git with submodule support
+- **Docker & Docker Compose** (for local development)
+- **Balena CLI** (for production deployments)
+- **Git** with submodule support
+
+### Ports Used
+- **8080**: Frontend application (main interface)
+- **8000**: Backend API
+- **5432**: PostgreSQL database  
+- **5050**: pgAdmin web interface
+- **8003/8004**: Nextcloud file storage
+- **1080/1025**: Mailcrab email testing
 
 ## 🔄 CI/CD Pipeline
 
@@ -134,15 +161,39 @@ git commit -m "Update frontend submodule"
 
 ### Testing
 ```bash
-# Create a test environment on DigitalOcean
-./tests/do-testbed_cli.sh create
+# Quick test - rebuild and verify all services
+./scripts/clean_and_test.sh
 
-# Run integration tests
-./tests/test-balena.sh
+# Reset database if needed
+./scripts/reset_postgres.sh
 
-# Clean up
-./tests/do-testbed_cli.sh destroy
+# Run full CI test suite
+./scripts/ci-test.sh local
 ```
+
+### Troubleshooting
+
+**Services not starting?**
+```bash
+# Check service status
+docker compose ps
+
+# View logs
+docker compose logs colmena-app
+docker compose logs postgres
+
+# Restart services
+docker compose restart
+
+# Complete reset
+docker compose down --volumes
+docker compose up -d
+```
+
+**Can't access services?**
+- Ensure Docker is running and ports aren't blocked
+- Wait 2-3 minutes for full startup
+- Check health: `docker compose ps` - all services should show "healthy" or "running"
 
 ## 📚 Documentation
 

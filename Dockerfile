@@ -83,6 +83,9 @@ COPY frontend/devops/local/nginx/app /etc/nginx/http.d/default.conf
 COPY backend/devops/builder/entrypoint.sh /app/backend/entrypoint.sh
 RUN chmod +x /app/backend/entrypoint.sh
 
+# Fix gunicorn command to use Python module syntax
+RUN sed -i 's/gunicorn --timeout/python -m gunicorn --timeout/g' /app/backend/entrypoint.sh
+
 # Copy supervisor configuration
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
@@ -102,8 +105,7 @@ EXPOSE 80 8000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:80/ || \
-        wget --no-verbose --tries=1 --spider http://localhost:8000/health/ || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:80/ || exit 1
 
 # Start supervisor to manage both processes
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
