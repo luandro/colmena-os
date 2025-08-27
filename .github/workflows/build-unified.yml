@@ -1,0 +1,174 @@
+name: Build and Push Unified ColmenaOS Image
+
+on:
+  repository_dispatch:
+    types: [submodule-update]
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: 'Target platforms'
+        required: false
+        default: 'linux/amd64,linux/arm64'
+        type: string
+
+env:
+  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+  REGISTRY: docker.io
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      tag_suffix: ${{ steps.determine_tag.outputs.tag_suffix }}
+      platforms: ${{ steps.determine_platforms.outputs.platforms }}
+    steps:
+      - name: Checkout code with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine tag suffix
+        id: determine_tag
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "tag_suffix=-pr${{ github.event.number }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref }}" = "refs/heads/develop" ]; then
+            echo "tag_suffix=-dev" >> $GITHUB_OUTPUT
+          else
+            echo "tag_suffix=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Determine platforms
+        id: determine_platforms
+        run: |
+          if [ "${{ inputs.platforms }}" != "" ]; then
+            echo "platforms=${{ inputs.platforms }}" >> $GITHUB_OUTPUT
+          else
+            echo "platforms=linux/amd64,linux/arm64" >> $GITHUB_OUTPUT
+          fi
+
+  build-unified:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up QEMU for multi-arch builds
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache-unified
+          key: ${{ runner.os }}-buildx-unified-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-unified-
+
+      - name: Login to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-unified
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push unified Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: ${{ needs.prepare.outputs.platforms }}
+          push: ${{ github.event_name != 'pull_request' }}
+          load: ${{ github.event_name == 'pull_request' }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-unified:latest${{ needs.prepare.outputs.tag_suffix }}
+            ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-unified:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.title=ColmenaOS Unified
+            org.opencontainers.image.description=ColmenaOS unified frontend + backend service
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+          cache-from: type=local,src=/tmp/.buildx-cache-unified
+          cache-to: type=local,dest=/tmp/.buildx-cache-unified-new,mode=max
+
+      - name: Move cache
+        run: |
+          rm -rf /tmp/.buildx-cache-unified
+          mv /tmp/.buildx-cache-unified-new /tmp/.buildx-cache-unified
+
+  notify-completion:
+    needs: [prepare, build-unified]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine build status
+        id: status
+        run: |
+          unified_result="${{ needs.build-unified.result }}"
+
+          if [[ "$unified_result" == "success" ]]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "message=✅ Unified Docker image built and pushed successfully" >> $GITHUB_OUTPUT
+          else
+            echo "status=failure" >> $GITHUB_OUTPUT
+            echo "message=❌ Unified Docker image build failed" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Trigger Balena deployment on success
+        if: steps.status.outputs.status == 'success' && (github.ref == 'refs/heads/develop' || github.event_name == 'repository_dispatch')
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          event-type: deploy-to-balena-draft
+          client-payload: |
+            {
+              "services": ["unified"],
+              "sha": "${{ github.sha }}",
+              "ref": "${{ github.ref }}",
+              "trigger": "${{ github.event_name }}"
+            }
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const status = "${{ steps.status.outputs.status }}";
+            const message = "${{ steps.status.outputs.message }}";
+
+            const body = `## 🐳 Unified Docker Build Status: ${status === 'success' ? '✅ SUCCESS' : '❌ FAILED'}
+
+            ${message}
+
+            **Platforms:** ${{ needs.prepare.outputs.platforms }}
+            **Commit:** \`${{ github.sha }}\``;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });

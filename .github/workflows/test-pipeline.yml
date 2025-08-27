@@ -59,21 +59,21 @@ jobs:
       - name: Test GitHub Actions workflows locally
         run: |
           echo "🧪 Testing workflows with act..."
-          
+
           # Test daily update checker (dry run)
           echo "Testing daily update checker..."
           act schedule --secret-file .secrets --dry-run || echo "Daily update checker dry run completed"
-          
-          # Test build workflow preparation  
+
+          # Test build workflow preparation
           echo "Testing build workflow preparation..."
           act push --secret-file .secrets --job prepare --dry-run || echo "Build preparation dry run completed"
-          
+
           echo "✅ Local workflow tests completed"
 
       - name: Test workflow syntax validation
         run: |
           echo "🔍 Validating workflow syntax..."
-          
+
           for workflow in .github/workflows/*.yml; do
             echo "Validating $workflow..."
             # Use act to validate syntax
@@ -82,7 +82,7 @@ jobs:
               exit 1
             }
           done
-          
+
           echo "✅ All workflow syntax valid"
 
       - name: Cleanup act artifacts
@@ -117,49 +117,49 @@ jobs:
         run: |
           testbed_name="${TESTBED_PREFIX}-integration"
           echo "testbed_name=$testbed_name" >> $GITHUB_OUTPUT
-          
+
           echo "🚀 Creating integration testbed: $testbed_name"
           ./tests/0_do-testbed_cli.sh create "$testbed_name"
 
       - name: Test Docker environment on testbed
         run: |
           testbed_name="${{ steps.create-testbed.outputs.testbed_name }}"
-          
+
           # Get testbed info
           droplet_name=$(doctl compute droplet list --format Name --no-header | grep "$testbed_name" | head -1)
           droplet_ip=$(doctl compute droplet get "$droplet_name" --format PublicIPv4 --no-header)
-          
+
           echo "🐳 Testing Docker environment on $droplet_ip..."
-          
+
           # Test Docker functionality
           ssh -o StrictHostKeyChecking=no "root@$droplet_ip" << 'EOF'
             set -e
             echo "=== Docker Version ==="
             docker --version
             docker compose --version
-            
+
             echo "=== Testing Multi-arch Support ==="
             docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
             docker buildx create --name test-builder --use || true
             docker buildx inspect --bootstrap
-            
+
             echo "=== Testing Base Image Pulls ==="
             docker pull node:18-alpine
             docker pull python:3.12-slim
             docker pull postgres:13-alpine
-            
+
             echo "=== System Resources ==="
             df -h /
             free -h
             nproc
-            
+
             echo "✅ Docker environment test passed"
           EOF
 
       - name: Test ColmenaOS deployment
         run: |
           testbed_name="${{ steps.create-testbed.outputs.testbed_name }}"
-          
+
           echo "🚀 Testing ColmenaOS deployment..."
           ./tests/0_do-testbed_cli.sh deploy "$testbed_name"
 
@@ -168,34 +168,34 @@ jobs:
           testbed_name="${{ steps.create-testbed.outputs.testbed_name }}"
           droplet_name=$(doctl compute droplet list --format Name --no-header | grep "$testbed_name" | head -1)
           droplet_ip=$(doctl compute droplet get "$droplet_name" --format PublicIPv4 --no-header)
-          
+
           echo "🔍 Running health checks on $droplet_ip..."
-          
+
           # Extended health checks
           ssh -o StrictHostKeyChecking=no "root@$droplet_ip" << 'EOF'
             cd /root
-            
+
             echo "=== Service Status ==="
             docker compose ps
-            
+
             echo "=== Container Health ==="
             for container in $(docker ps --format "{{.Names}}"); do
               echo "Checking $container..."
               docker inspect "$container" --format "{{.State.Status}}: {{.State.Health.Status}}" || echo "No health check"
             done
-            
+
             echo "=== Network Connectivity ==="
             # Test internal service connectivity
             timeout 10 docker compose exec -T backend curl -f http://db:5432 2>/dev/null && echo "DB connection: OK" || echo "DB connection: SKIP"
-            
+
             echo "=== External Accessibility ==="
             # Test if services respond on their expected ports
             curl -f http://localhost:80 && echo "Frontend: OK" || echo "Frontend: FAILED"
             curl -f http://localhost:1080 && echo "Mailcrab: OK" || echo "Mailcrab: FAILED"
-            
+
             echo "=== Resource Usage ==="
             docker stats --no-stream
-            
+
             echo "✅ Health checks completed"
           EOF
 
@@ -211,45 +211,69 @@ jobs:
         run: |
           testbed_name="${{ steps.create-testbed.outputs.testbed_name }}"
           droplet_ip=$(doctl compute droplet get "$(doctl compute droplet list --format Name --no-header | grep "$testbed_name" | head -1)" --format PublicIPv4 --no-header)
-          
+
           echo "🐛 Testbed preserved for debugging:"
           echo "  Name: $testbed_name"
           echo "  IP: $droplet_ip"
           echo "  SSH: ssh root@$droplet_ip"
           echo "  Cleanup: ./tests/0_do-testbed_cli.sh destroy $testbed_name"
 
+  unified-docker-tests:
+    runs-on: ubuntu-latest
+    if: github.event.inputs.test_type != 'integration'
+    steps:
+      - name: Checkout code with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Test Unified Docker Setup
+        run: |
+          echo "🧪 Testing Unified Docker Setup..."
+          chmod +x ./tests/test-unified.sh
+          ./tests/test-unified.sh
+          echo "✅ Unified Docker test completed successfully"
+
   test-summary:
     runs-on: ubuntu-latest
-    needs: [local-tests, integration-tests]
+    needs: [local-tests, integration-tests, unified-docker-tests]
     if: always()
     steps:
       - name: Test Results Summary
         run: |
           echo "# 🧪 Test Pipeline Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          
+
           local_result="${{ needs.local-tests.result }}"
           integration_result="${{ needs.integration-tests.result }}"
-          
+          unified_result="${{ needs.unified-docker-tests.result }}"
+
           if [[ "$local_result" == "success" ]] || [[ "$local_result" == "skipped" ]]; then
             echo "✅ **Local Tests**: Passed" >> $GITHUB_STEP_SUMMARY
           else
             echo "❌ **Local Tests**: Failed" >> $GITHUB_STEP_SUMMARY
           fi
-          
+
           if [[ "$integration_result" == "success" ]] || [[ "$integration_result" == "skipped" ]]; then
             echo "✅ **Integration Tests**: Passed" >> $GITHUB_STEP_SUMMARY
           else
             echo "❌ **Integration Tests**: Failed" >> $GITHUB_STEP_SUMMARY
           fi
-          
+
+          if [[ "$unified_result" == "success" ]] || [[ "$unified_result" == "skipped" ]]; then
+            echo "✅ **Unified Docker Tests**: Passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Unified Docker Tests**: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## Test Configuration" >> $GITHUB_STEP_SUMMARY
           echo "- **Trigger**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Branch**: ${{ github.ref }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Test Type**: ${{ inputs.test_type || 'full' }}" >> $GITHUB_STEP_SUMMARY
-          
+
           # Set overall status
           if [[ ("$local_result" == "success" || "$local_result" == "skipped") && ("$integration_result" == "success" || "$integration_result" == "skipped") ]]; then
             echo "🎉 **Overall Result**: All tests passed!" >> $GITHUB_STEP_SUMMARY
@@ -266,27 +290,29 @@ jobs:
           script: |
             const localResult = "${{ needs.local-tests.result }}";
             const integrationResult = "${{ needs.integration-tests.result }}";
-            
+            const unifiedResult = "${{ needs.unified-docker-tests.result }}";
+
             const getStatusEmoji = (result) => {
               if (result === 'success' || result === 'skipped') return '✅';
               if (result === 'failure') return '❌';
               return '⏸️';
             };
-            
+
             const body = `## 🧪 Test Pipeline Results
-            
+
             | Test Type | Status | Result |
             |-----------|--------|---------|
             | Local Tests | ${getStatusEmoji(localResult)} | ${localResult} |
             | Integration Tests | ${getStatusEmoji(integrationResult)} | ${integrationResult} |
-            
+            | Unified Docker Tests | ${getStatusEmoji(unifiedResult)} | ${unifiedResult} |
+
             **Commit**: \`${{ github.sha }}\`
             **Test Type**: ${{ inputs.test_type || 'full' }}
-            
-            ${(localResult === 'success' || localResult === 'skipped') && (integrationResult === 'success' || integrationResult === 'skipped') 
-              ? '🎉 All tests passed! Ready for review.' 
+
+            ${(localResult === 'success' || localResult === 'skipped') && (integrationResult === 'success' || integrationResult === 'skipped') && (unifiedResult === 'success' || unifiedResult === 'skipped')
+              ? '🎉 All tests passed! Ready for review.'
               : '❌ Some tests failed. Please check the logs and fix issues before merging.'}`;
-            
+
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,

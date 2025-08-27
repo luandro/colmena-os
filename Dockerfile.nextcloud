@@ -1,0 +1,16 @@
+FROM nextcloud:latest
+
+# Install additional PHP extensions if needed
+RUN apt-get update && apt-get install -y \
+    libmagickcore-6.q16-6-extra \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy custom configuration if any
+# COPY config.php /usr/src/nextcloud/config/
+
+# Set proper permissions
+RUN chown -R www-data:www-data /var/www/html
+
+EXPOSE 80
+
+CMD ["apache2-foreground"]
