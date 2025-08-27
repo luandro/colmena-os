@@ -10,14 +10,17 @@ services:
     command: postgres -c 'max_connections=10000'
     container_name: colmena_postgres
     hostname: ${POSTGRES_HOSTNAME:-postgres}
+    env_file:
+      - .env
     environment:
-      POSTGRES_USER: ${POSTGRES_USERNAME:-colmena}
+      POSTGRES_USER: ${POSTGRES_USER:-colmena}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-colmena}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d
     networks:
       colmena_devops:
         aliases:
@@ -27,7 +30,7 @@ services:
       io.balena.features.supervisor-api: '1'
       io.balena.features.balena-api: '1'
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USERNAME:-colmena}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-colmena}"]
       interval: 30s
       timeout: 10s
       retries: 3
