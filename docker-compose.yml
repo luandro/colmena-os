@@ -30,7 +30,7 @@ services:
       io.balena.features.supervisor-api: '1'
       io.balena.features.balena-api: '1'
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-colmena}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-colmena} -d ${POSTGRES_DB:-colmena}"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -113,11 +113,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    env_file:
+      - .env
     ports:
       - "${HTTP_PORT:-80}:80"
       - "${BACKEND_PORT:-8000}:8000"
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USERNAME:-colmena}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-colmena}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-colmena}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-colmena}
       - SECRET_KEY=${SECRET_KEY}
       - DEBUG=${DEBUG:-false}
       - ALLOWED_HOSTS=${ALLOWED_HOSTS:-colmena.local,localhost,*.local,*}
