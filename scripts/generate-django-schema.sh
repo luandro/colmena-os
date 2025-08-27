@@ -26,7 +26,9 @@ fi
 # Set required environment variables if not set
 if ! grep -q "^POSTGRES_PASSWORD=" .env || [ -z "$(grep '^POSTGRES_PASSWORD=' .env | cut -d'=' -f2)" ]; then
     echo "🔧 Setting default POSTGRES_PASSWORD..."
-    echo "POSTGRES_PASSWORD=colmena123" >> .env
+    # Generate a random password instead of hardcoding
+    POSTGRES_PASSWORD=$(openssl rand -base64 12 | tr -d "=+/" | cut -c1-12)
+    echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" >> .env
 fi
 
 # Fix docker-compose.yml volume issue temporarily
