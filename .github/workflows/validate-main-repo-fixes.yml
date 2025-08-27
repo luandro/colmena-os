@@ -82,16 +82,18 @@ jobs:
       - name: Install act for workflow validation
         run: |
           curl -s https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash
-          act --version
+          export PATH=$PATH:./bin
+          ./bin/act --version
 
       - name: Validate workflow syntax
         run: |
           echo "🔍 Validating GitHub Actions workflow syntax..."
           
+          export PATH=$PATH:./bin
           for workflow in .github/workflows/*.yml; do
             echo "Validating $workflow..."
             # Use act to validate syntax
-            if act --list --workflows "$workflow" > /dev/null 2>&1; then
+            if ./bin/act --list --workflows "$workflow" > /dev/null 2>&1; then
               echo "✅ $workflow syntax valid"
             else
               echo "❌ Syntax error in $workflow"
@@ -113,16 +115,25 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Create temporary .env file for validation
+        run: |
+          echo "🔧 Creating temporary .env file for docker-compose validation..."
+          cat > .env << EOF
+          POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+          SECRET_KEY=$SECRET_KEY
+          NEXTCLOUD_ADMIN_PASSWORD=$NEXTCLOUD_ADMIN_PASSWORD
+          SUPERADMIN_PASSWORD=$SUPERADMIN_PASSWORD
+          PGADMIN_DEFAULT_PASSWORD=$PGADMIN_DEFAULT_PASSWORD
+          CORS_ALLOWED_ORIGINS=http://localhost:3000 http://127.0.0.1:3000
+          POSTGRES_DB=colmena
+          POSTGRES_USER=colmena
+          POSTGRES_HOSTNAME=postgres
+          POSTGRES_PORT=5432
+          EOF
+
       - name: Validate docker-compose.yml syntax
         run: |
           echo "🔍 Validating docker-compose.yml syntax..."
-          
-          # Set required environment variables for validation
-          export POSTGRES_PASSWORD="$POSTGRES_PASSWORD"
-          export SECRET_KEY="$SECRET_KEY"
-          export NEXTCLOUD_ADMIN_PASSWORD="$NEXTCLOUD_ADMIN_PASSWORD"
-          export SUPERADMIN_PASSWORD="$SUPERADMIN_PASSWORD"
-          export PGADMIN_DEFAULT_PASSWORD="$PGLADMIN_DEFAULT_PASSWORD"
           
           if docker compose config --quiet; then
             echo "✅ docker-compose.yml syntax is valid"
@@ -134,13 +145,6 @@ jobs:
       - name: Test Docker Compose service definition structure
         run: |
           echo "🔍 Analyzing Docker Compose service definitions..."
-          
-          # Set required environment variables
-          export POSTGRES_PASSWORD="$POSTGRES_PASSWORD"
-          export SECRET_KEY="$SECRET_KEY"
-          export NEXTCLOUD_ADMIN_PASSWORD="$NEXTCLOUD_ADMIN_PASSWORD"
-          export SUPERADMIN_PASSWORD="$SUPERADMIN_PASSWORD"
-          export PGLADMIN_DEFAULT_PASSWORD="$PGLADMIN_DEFAULT_PASSWORD"
           
           # Parse docker-compose and check critical services are defined
           if docker compose config | grep -q "colmena-app:"; then
