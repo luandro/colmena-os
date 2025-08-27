@@ -1,0 +1,229 @@
+name: Validate Main Repository Issue #5 Fixes
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      verbose_output:
+        description: 'Enable verbose logging for debugging'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  # Test environment variables
+  POSTGRES_PASSWORD: test_secure_password_123
+  SECRET_KEY: test_secret_key_for_testing_purposes_minimum_fifty_characters_required
+  NEXTCLOUD_ADMIN_PASSWORD: test_nextcloud_admin_pass
+  SUPERADMIN_PASSWORD: test_superadmin_pass
+  PGADMIN_DEFAULT_PASSWORD: test_pgadmin_pass
+
+jobs:
+  validate-cors-config:
+    name: Validate CORS Configuration Fix
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main repository only
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Verify CORS environment variable mapping in docker-compose
+        run: |
+          echo "🔍 Checking docker-compose.yml CORS mapping..."
+          
+          if grep -q "CORS_ALLOWED_ORIGINS=\${CORS_ALLOWED_ORIGINS}" docker-compose.yml; then
+            echo "✅ CORS_ALLOWED_ORIGINS properly mapped in docker-compose.yml"
+          else
+            echo "❌ CORS_ALLOWED_ORIGINS mapping missing in docker-compose.yml"
+            exit 1
+          fi
+
+      - name: Verify database environment variable mappings
+        run: |
+          echo "🔍 Checking database environment variable mappings in docker-compose.yml..."
+          
+          required_vars=(
+            "POSTGRES_DATABASE=\${POSTGRES_DB:-colmena}"
+            "POSTGRES_USERNAME=\${POSTGRES_USER:-colmena}"
+            "POSTGRES_HOSTNAME=\${POSTGRES_HOSTNAME:-postgres}"
+            "POSTGRES_PORT=\${POSTGRES_PORT:-5432}"
+          )
+          
+          all_found=true
+          for var in "${required_vars[@]}"; do
+            if grep -q "$var" docker-compose.yml; then
+              echo "✅ Found: $var"
+            else
+              echo "❌ Missing: $var"
+              all_found=false
+            fi
+          done
+          
+          if [ "$all_found" = false ]; then
+            echo "❌ Some database environment variable mappings are missing"
+            exit 1
+          else
+            echo "✅ All database environment variable mappings are present"
+          fi
+
+  validate-workflow-syntax:
+    name: Validate Workflow Files
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main repository only
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Install act for workflow validation
+        run: |
+          curl -s https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash
+          act --version
+
+      - name: Validate workflow syntax
+        run: |
+          echo "🔍 Validating GitHub Actions workflow syntax..."
+          
+          for workflow in .github/workflows/*.yml; do
+            echo "Validating $workflow..."
+            # Use act to validate syntax
+            if act --list --workflows "$workflow" > /dev/null 2>&1; then
+              echo "✅ $workflow syntax valid"
+            else
+              echo "❌ Syntax error in $workflow"
+              exit 1
+            fi
+          done
+          
+          echo "✅ All workflow syntax valid"
+
+  test-docker-composition:
+    name: Test Docker Compose Configuration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main repository only
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Validate docker-compose.yml syntax
+        run: |
+          echo "🔍 Validating docker-compose.yml syntax..."
+          
+          # Set required environment variables for validation
+          export POSTGRES_PASSWORD="$POSTGRES_PASSWORD"
+          export SECRET_KEY="$SECRET_KEY"
+          export NEXTCLOUD_ADMIN_PASSWORD="$NEXTCLOUD_ADMIN_PASSWORD"
+          export SUPERADMIN_PASSWORD="$SUPERADMIN_PASSWORD"
+          export PGADMIN_DEFAULT_PASSWORD="$PGLADMIN_DEFAULT_PASSWORD"
+          
+          if docker compose config --quiet; then
+            echo "✅ docker-compose.yml syntax is valid"
+          else
+            echo "❌ docker-compose.yml syntax error detected"
+            exit 1
+          fi
+
+      - name: Test Docker Compose service definition structure
+        run: |
+          echo "🔍 Analyzing Docker Compose service definitions..."
+          
+          # Set required environment variables
+          export POSTGRES_PASSWORD="$POSTGRES_PASSWORD"
+          export SECRET_KEY="$SECRET_KEY"
+          export NEXTCLOUD_ADMIN_PASSWORD="$NEXTCLOUD_ADMIN_PASSWORD"
+          export SUPERADMIN_PASSWORD="$SUPERADMIN_PASSWORD"
+          export PGLADMIN_DEFAULT_PASSWORD="$PGLADMIN_DEFAULT_PASSWORD"
+          
+          # Parse docker-compose and check critical services are defined
+          if docker compose config | grep -q "colmena-app:"; then
+            echo "✅ colmena-app service defined"
+          else
+            echo "❌ colmena-app service missing"
+            exit 1
+          fi
+          
+          if docker compose config | grep -q "postgres:"; then
+            echo "✅ postgres service defined"
+          else
+            echo "❌ postgres service missing"
+            exit 1
+          fi
+          
+          # Check environment variable propagation
+          if docker compose config | grep -q "CORS_ALLOWED_ORIGINS"; then
+            echo "✅ CORS_ALLOWED_ORIGINS environment variable present in configuration"
+          else
+            echo "❌ CORS_ALLOWED_ORIGINS environment variable not found in configuration"
+            exit 1
+          fi
+          
+          if docker compose config | grep -q "POSTGRES_DATABASE"; then
+            echo "✅ POSTGRES_DATABASE environment variable present in configuration"
+          else
+            echo "❌ POSTGRES_DATABASE environment variable not found in configuration"
+            exit 1
+          fi
+
+  test-summary:
+    name: Validation Summary  
+    runs-on: ubuntu-latest
+    needs: [validate-cors-config, validate-workflow-syntax, test-docker-composition]
+    if: always()
+    steps:
+      - name: Generate test summary
+        run: |
+          cors_result="${{ needs.validate-cors-config.result }}"
+          workflow_result="${{ needs.validate-workflow-syntax.result }}"
+          docker_result="${{ needs.test-docker-composition.result }}"
+          
+          echo "# 🧪 Main Repository Issue #5 Validation Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Individual test results
+          echo "## Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "| Test Category | Status | Result |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------------|--------|---------|" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "$cors_result" = "success" ]; then
+            echo "| CORS & Database Config | ✅ | Passed |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| CORS & Database Config | ❌ | Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "$workflow_result" = "success" ]; then
+            echo "| Workflow Syntax | ✅ | Passed |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Workflow Syntax | ❌ | Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "$docker_result" = "success" ]; then
+            echo "| Docker Compose | ✅ | Passed |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Docker Compose | ❌ | Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Overall result
+          if [ "$cors_result" = "success" ] && [ "$workflow_result" = "success" ] && [ "$docker_result" = "success" ]; then
+            echo "## 🎉 Overall Result: SUCCESS" >> $GITHUB_STEP_SUMMARY
+            echo "Main repository Issue #5 fixes validated successfully!" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ❌ Overall Result: FAILED" >> $GITHUB_STEP_SUMMARY
+            echo "Some validations failed. Please review the test results above." >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Note:** This workflow validates main repository changes only." >> $GITHUB_STEP_SUMMARY
+          echo "Submodule-specific fixes require separate validation." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Ref:** ${{ github.ref }}" >> $GITHUB_STEP_SUMMARY
