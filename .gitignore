@@ -98,3 +98,6 @@ env/
 ehthumbs.db
 Thumbs.dbschema.json
 test-schema/
+
+# Development TODO file
+TODO.md

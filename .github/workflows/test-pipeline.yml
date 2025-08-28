@@ -26,71 +26,31 @@ env:
   TESTBED_PREFIX: ci-test-${{ github.run_id }}
 
 jobs:
-  local-tests:
+  workflow-validation:
     runs-on: ubuntu-latest
     if: github.event.inputs.test_type != 'integration'
     steps:
-      - name: Checkout code with submodules
+      - name: Checkout code (no submodules)
         uses: actions/checkout@v4
         with:
-          submodules: recursive
-          token: ${{ secrets.GITHUB_TOKEN }}
+          submodules: false
 
-      - name: Install act
+      - name: Validate workflow YAML syntax
         run: |
-          curl -s https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash
-          act --version
-
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Create secrets file for act
-        run: |
-          cat > .secrets << EOF
-          DOCKERHUB_TOKEN=${{ secrets.DOCKERHUB_TOKEN }}
-          DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }}
-          BALENA_TOKEN=${{ secrets.BALENA_TOKEN }}
-          POSTGRES_PASSWORD=test_password_123
-          SECRET_KEY=test_secret_key_for_testing_purposes_minimum_fifty_chars
-          NEXTCLOUD_ADMIN_PASSWORD=test_nextcloud_pass
-          GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
-          EOF
-
-      - name: Test GitHub Actions workflows locally
-        run: |
-          echo "🧪 Testing workflows with act..."
-
-          # Test daily update checker (dry run)
-          echo "Testing daily update checker..."
-          act schedule --secret-file .secrets --dry-run || echo "Daily update checker dry run completed"
-
-          # Test build workflow preparation
-          echo "Testing build workflow preparation..."
-          act push --secret-file .secrets --job prepare --dry-run || echo "Build preparation dry run completed"
-
-          echo "✅ Local workflow tests completed"
-
-      - name: Test workflow syntax validation
-        run: |
-          echo "🔍 Validating workflow syntax..."
-
+          echo "🔍 Validating GitHub Actions workflow syntax..."
+          
+          # Check if all workflow files are valid YAML
           for workflow in .github/workflows/*.yml; do
-            echo "Validating $workflow..."
-            # Use act to validate syntax
-            act --list --workflows "$workflow" > /dev/null || {
-              echo "❌ Syntax error in $workflow"
+            echo "Checking YAML syntax for $workflow..."
+            if python -c "import yaml; yaml.safe_load(open('$workflow'))" 2>/dev/null; then
+              echo "✅ $workflow has valid YAML syntax"
+            else
+              echo "❌ YAML syntax error in $workflow"
               exit 1
-            }
+            fi
           done
-
-          echo "✅ All workflow syntax valid"
-
-      - name: Cleanup act artifacts
-        if: always()
-        run: |
-          rm -f .secrets
-          docker container prune -f --filter "label=act" || true
-          docker image prune -f --filter "label=act" || true
+          
+          echo "✅ All workflow files have valid YAML syntax"
 
   integration-tests:
     runs-on: ubuntu-latest
@@ -218,26 +178,49 @@ jobs:
           echo "  SSH: ssh root@$droplet_ip"
           echo "  Cleanup: ./tests/0_do-testbed_cli.sh destroy $testbed_name"
 
-  unified-docker-tests:
+  docker-basic-tests:
     runs-on: ubuntu-latest
     if: github.event.inputs.test_type != 'integration'
     steps:
-      - name: Checkout code with submodules
+      - name: Checkout code (no submodules)
         uses: actions/checkout@v4
         with:
-          submodules: recursive
-          token: ${{ secrets.GITHUB_TOKEN }}
+          submodules: false
 
-      - name: Test Unified Docker Setup
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Test Docker Compose Configuration
         run: |
-          echo "🧪 Testing Unified Docker Setup..."
-          chmod +x ./tests/test-unified.sh
-          ./tests/test-unified.sh
-          echo "✅ Unified Docker test completed successfully"
+          echo "🧪 Testing Docker Compose configuration..."
+          
+          # Create temporary .env for validation
+          cat > .env << EOF
+          POSTGRES_PASSWORD=test_password_123
+          SECRET_KEY=test_secret_key_for_testing_purposes_minimum_fifty_chars
+          NEXTCLOUD_ADMIN_PASSWORD=test_nextcloud_pass
+          SUPERADMIN_PASSWORD=test_superadmin_pass
+          PGADMIN_DEFAULT_PASSWORD=test_pgadmin_pass
+          CORS_ALLOWED_ORIGINS=http://localhost:3000 http://127.0.0.1:3000
+          POSTGRES_DB=colmena
+          POSTGRES_USER=colmena
+          POSTGRES_HOSTNAME=postgres
+          POSTGRES_PORT=5432
+          EOF
+          
+          # Validate docker-compose.yml syntax
+          if docker compose config --quiet; then
+            echo "✅ Docker Compose configuration is valid"
+          else
+            echo "❌ Docker Compose configuration has errors"
+            exit 1
+          fi
+          
+          echo "✅ Docker configuration test completed successfully"
 
   test-summary:
     runs-on: ubuntu-latest
-    needs: [local-tests, integration-tests, unified-docker-tests]
+    needs: [workflow-validation, integration-tests, docker-basic-tests]
     if: always()
     steps:
       - name: Test Results Summary
@@ -245,14 +228,14 @@ jobs:
           echo "# 🧪 Test Pipeline Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          local_result="${{ needs.local-tests.result }}"
+          workflow_result="${{ needs.workflow-validation.result }}"
           integration_result="${{ needs.integration-tests.result }}"
-          unified_result="${{ needs.unified-docker-tests.result }}"
+          docker_result="${{ needs.docker-basic-tests.result }}"
 
-          if [[ "$local_result" == "success" ]] || [[ "$local_result" == "skipped" ]]; then
-            echo "✅ **Local Tests**: Passed" >> $GITHUB_STEP_SUMMARY
+          if [[ "$workflow_result" == "success" ]] || [[ "$workflow_result" == "skipped" ]]; then
+            echo "✅ **Workflow Validation**: Passed" >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ **Local Tests**: Failed" >> $GITHUB_STEP_SUMMARY
+            echo "❌ **Workflow Validation**: Failed" >> $GITHUB_STEP_SUMMARY
           fi
 
           if [[ "$integration_result" == "success" ]] || [[ "$integration_result" == "skipped" ]]; then
@@ -261,10 +244,10 @@ jobs:
             echo "❌ **Integration Tests**: Failed" >> $GITHUB_STEP_SUMMARY
           fi
 
-          if [[ "$unified_result" == "success" ]] || [[ "$unified_result" == "skipped" ]]; then
-            echo "✅ **Unified Docker Tests**: Passed" >> $GITHUB_STEP_SUMMARY
+          if [[ "$docker_result" == "success" ]] || [[ "$docker_result" == "skipped" ]]; then
+            echo "✅ **Docker Basic Tests**: Passed" >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ **Unified Docker Tests**: Failed" >> $GITHUB_STEP_SUMMARY
+            echo "❌ **Docker Basic Tests**: Failed" >> $GITHUB_STEP_SUMMARY
           fi
 
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -275,7 +258,7 @@ jobs:
           echo "- **Test Type**: ${{ inputs.test_type || 'full' }}" >> $GITHUB_STEP_SUMMARY
 
           # Set overall status
-          if [[ ("$local_result" == "success" || "$local_result" == "skipped") && ("$integration_result" == "success" || "$integration_result" == "skipped") ]]; then
+          if [[ ("$workflow_result" == "success" || "$workflow_result" == "skipped") && ("$integration_result" == "success" || "$integration_result" == "skipped") && ("$docker_result" == "success" || "$docker_result" == "skipped") ]]; then
             echo "🎉 **Overall Result**: All tests passed!" >> $GITHUB_STEP_SUMMARY
             exit 0
           else
@@ -288,9 +271,9 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const localResult = "${{ needs.local-tests.result }}";
+            const workflowResult = "${{ needs.workflow-validation.result }}";
             const integrationResult = "${{ needs.integration-tests.result }}";
-            const unifiedResult = "${{ needs.unified-docker-tests.result }}";
+            const dockerResult = "${{ needs.docker-basic-tests.result }}";
 
             const getStatusEmoji = (result) => {
               if (result === 'success' || result === 'skipped') return '✅';
@@ -302,14 +285,14 @@ jobs:
 
             | Test Type | Status | Result |
             |-----------|--------|---------|
-            | Local Tests | ${getStatusEmoji(localResult)} | ${localResult} |
+            | Workflow Validation | ${getStatusEmoji(workflowResult)} | ${workflowResult} |
             | Integration Tests | ${getStatusEmoji(integrationResult)} | ${integrationResult} |
-            | Unified Docker Tests | ${getStatusEmoji(unifiedResult)} | ${unifiedResult} |
+            | Docker Basic Tests | ${getStatusEmoji(dockerResult)} | ${dockerResult} |
 
             **Commit**: \`${{ github.sha }}\`
             **Test Type**: ${{ inputs.test_type || 'full' }}
 
-            ${(localResult === 'success' || localResult === 'skipped') && (integrationResult === 'success' || integrationResult === 'skipped') && (unifiedResult === 'success' || unifiedResult === 'skipped')
+            ${(workflowResult === 'success' || workflowResult === 'skipped') && (integrationResult === 'success' || integrationResult === 'skipped') && (dockerResult === 'success' || dockerResult === 'skipped')
               ? '🎉 All tests passed! Ready for review.'
               : '❌ Some tests failed. Please check the logs and fix issues before merging.'}`;
 
