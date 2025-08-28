@@ -86,7 +86,7 @@ jobs:
           echo "🚀 Starting infrastructure services..."
           
           # Start only infrastructure services first
-          docker-compose up -d postgres pgadmin nextcloud mail
+          docker compose up -d postgres pgadmin nextcloud mail
           
           echo "⏳ Waiting for infrastructure services to become ready..."
           sleep 45
@@ -96,10 +96,10 @@ jobs:
           echo "🔍 Testing PostgreSQL service..."
           
           # Wait for PostgreSQL to be ready
-          timeout 60 bash -c 'until docker-compose exec -T postgres pg_isready -U colmena -d colmena; do echo "Waiting for PostgreSQL..."; sleep 2; done'
+          timeout 60 bash -c 'until docker compose exec -T postgres pg_isready -U colmena -d colmena; do echo "Waiting for PostgreSQL..."; sleep 2; done'
           
           # Test PostgreSQL connectivity
-          if docker-compose exec -T postgres psql -U colmena -d colmena -c "SELECT version();" > /dev/null 2>&1; then
+          if docker compose exec -T postgres psql -U colmena -d colmena -c "SELECT version();" > /dev/null 2>&1; then
             echo "✅ PostgreSQL is running and accessible"
           else
             echo "❌ PostgreSQL connectivity test failed"
@@ -172,7 +172,7 @@ jobs:
           echo "🔍 Testing inter-service connectivity..."
           
           # Test database connectivity from within Docker network
-          if docker-compose exec -T postgres psql -U colmena -d colmena -c "SELECT 1;" > /dev/null 2>&1; then
+          if docker compose exec -T postgres psql -U colmena -d colmena -c "SELECT 1;" > /dev/null 2>&1; then
             echo "✅ Database internal connectivity working"
           else
             echo "❌ Database internal connectivity failed"
@@ -180,7 +180,7 @@ jobs:
           fi
           
           # Test that services can resolve each other
-          if docker-compose exec -T postgres nslookup mail > /dev/null 2>&1; then
+          if docker compose exec -T postgres nslookup mail > /dev/null 2>&1; then
             echo "✅ Service DNS resolution working"
           else
             echo "❌ Service DNS resolution failed"
@@ -192,16 +192,16 @@ jobs:
         run: |
           echo "📋 Collecting service logs..."
           echo "=== PostgreSQL logs ==="
-          docker-compose logs postgres | tail -50
+          docker compose logs postgres | tail -50
           
           echo "=== PgAdmin logs ==="
-          docker-compose logs pgadmin | tail -50
+          docker compose logs pgadmin | tail -50
           
           echo "=== Nextcloud logs ==="
-          docker-compose logs nextcloud | tail -50
+          docker compose logs nextcloud | tail -50
           
           echo "=== Mail logs ==="
-          docker-compose logs mail | tail -50
+          docker compose logs mail | tail -50
 
       - name: Check resource usage
         run: |
@@ -218,7 +218,7 @@ jobs:
         if: always() && !inputs.skip_cleanup
         run: |
           echo "🧹 Cleaning up services..."
-          docker-compose down -v
+          docker compose down -v
           docker system prune -f
           
       - name: Preserve environment for debugging
@@ -231,7 +231,7 @@ jobs:
           echo "- Mailcrab: http://localhost:1080"
           echo "- Nextcloud API: http://localhost:8004"
           echo ""
-          echo "To cleanup manually: docker-compose down -v"
+          echo "To cleanup manually: docker compose down -v"
 
   test-summary:
     name: Service Test Summary
