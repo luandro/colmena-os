@@ -198,13 +198,13 @@ jobs:
       postgres:
         image: postgres:13
         env:
-          POSTGRES_PASSWORD: ${{ secrets.CI_DB_PASSWORD || 'testpassword' }}
-          POSTGRES_USER: ${{ secrets.CI_DB_USER || 'testuser' }}
-          POSTGRES_DB: ${{ secrets.CI_DB_NAME || 'colmena_dev' }}
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_USER: testuser
+          POSTGRES_DB: colmena_dev
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U ${{ secrets.CI_DB_USER || 'testuser' }} -d ${{ secrets.CI_DB_NAME || 'colmena_dev' }}"
+          --health-cmd "pg_isready -U testuser -d colmena_dev"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
@@ -241,8 +241,8 @@ jobs:
           attempt=0
 
           while [ $attempt -lt $max_attempts ]; do
-            if docker run --rm --network host -e PGPASSWORD=${{ secrets.CI_DB_PASSWORD || 'testpassword' }} postgres:13 \
-               psql -h localhost -U ${{ secrets.CI_DB_USER || 'testuser' }} -d ${{ secrets.CI_DB_NAME || 'colmena_dev' }} -c "SELECT version();" >/dev/null 2>&1; then
+            if docker run --rm --network host -e PGPASSWORD=testpassword postgres:13 \
+               psql -h localhost -U testuser -d colmena_dev -c "SELECT version();" >/dev/null 2>&1; then
               echo "✅ PostgreSQL is ready!"
               break
             fi
@@ -263,12 +263,12 @@ jobs:
           docker run -d \
             --name colmena-nextcloud \
             --network host \
-            -e POSTGRES_DB=${{ secrets.CI_DB_NAME || 'colmena_dev' }} \
-            -e POSTGRES_USER=${{ secrets.CI_DB_USER || 'testuser' }} \
-            -e POSTGRES_PASSWORD=${{ secrets.CI_DB_PASSWORD || 'testpassword' }} \
+            -e POSTGRES_DB=colmena_dev \
+            -e POSTGRES_USER=testuser \
+            -e POSTGRES_PASSWORD=testpassword \
             -e POSTGRES_HOST=localhost \
             -e NEXTCLOUD_ADMIN_USER=admin \
-            -e NEXTCLOUD_ADMIN_PASSWORD=${{ secrets.CI_NEXTCLOUD_PASSWORD || 'admin123' }} \
+            -e NEXTCLOUD_ADMIN_PASSWORD=admin123 \
             -e NEXTCLOUD_TRUSTED_DOMAINS=localhost \
             -p 80:80 \
             -p 5001:5001 \
@@ -322,18 +322,18 @@ jobs:
           docker run -d \
             --name colmena-backend \
             --network host \
-            -e DATABASE_URL=postgresql://${{ secrets.CI_DB_USER || 'testuser' }}:${{ secrets.CI_DB_PASSWORD || 'testpassword' }}@host.docker.internal:5432/${{ secrets.CI_DB_NAME || 'colmena_dev' }} \
+            -e DATABASE_URL=postgresql://testuser:testpassword@host.docker.internal:5432/colmena_dev \
             -e POSTGRES_HOSTNAME=host.docker.internal \
             -e POSTGRES_PORT=5432 \
-            -e POSTGRES_DATABASE=${{ secrets.CI_DB_NAME || 'colmena_dev' }} \
-            -e POSTGRES_USERNAME=${{ secrets.CI_DB_USER || 'testuser' }} \
-            -e POSTGRES_PASSWORD=${{ secrets.CI_DB_PASSWORD || 'testpassword' }} \
+            -e POSTGRES_DATABASE=colmena_dev \
+            -e POSTGRES_USERNAME=testuser \
+            -e POSTGRES_PASSWORD=testpassword \
             -e PGHOST=host.docker.internal \
             -e PGPORT=5432 \
-            -e PGDATABASE=${{ secrets.CI_DB_NAME || 'colmena_dev' }} \
-            -e PGUSER=${{ secrets.CI_DB_USER || 'testuser' }} \
-            -e PGPASSWORD=${{ secrets.CI_DB_PASSWORD || 'testpassword' }} \
-            -e COLMENA_SECRET_KEY=${{ secrets.CI_SECRET_KEY || 'test-secret-key-for-ci-minimum-50-characters-long-random-string-here' }} \
+            -e PGDATABASE=colmena_dev \
+            -e PGUSER=testuser \
+            -e PGPASSWORD=testpassword \
+            -e COLMENA_SECRET_KEY=test-secret-key-for-ci-minimum-50-characters-long-random-string-here \
             -e DEBUG=1 \
             -e LOG_LEVEL=DEBUG \
             -e DJANGO_SETTINGS_MODULE=colmena.settings.dev \
@@ -347,9 +347,9 @@ jobs:
             -e NEXTCLOUD_ADMIN_GROUP_NAME=admin \
             -e NEXTCLOUD_DEFAULT_USER_QUOTA=200mb \
             -e SUPERADMIN_EMAIL=admin@colmena.local \
-            -e SUPERADMIN_PASSWORD=${{ secrets.CI_SUPERADMIN_PASSWORD || 'admin123456' }} \
+            -e SUPERADMIN_PASSWORD=admin123456 \
             -e NEXTCLOUD_ADMIN_USER=admin \
-            -e NEXTCLOUD_ADMIN_PASSWORD=${{ secrets.CI_NEXTCLOUD_PASSWORD || 'admin123' }} \
+            -e NEXTCLOUD_ADMIN_PASSWORD=admin123 \
             -e GUNICORN_WORKER_TIMEOUT=120 \
             -e GUNICORN_WORKERS=2 \
             -e PORT=8000 \
