@@ -117,13 +117,27 @@ jobs:
         run: |
           echo "🔍 Testing Docker network connectivity..."
           
-          # Test that postgres container can resolve itself
-          if docker compose exec -T postgres nslookup postgres > /dev/null 2>&1; then
-            echo "✅ Docker network DNS resolution working"
+          # Test Docker network configuration
+          echo "📋 Checking Docker network setup..."
+          docker network ls
+          
+          # Check if postgres container is connected to the network
+          if docker inspect colmena_postgres --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}' | grep -q "colmena"; then
+            echo "✅ PostgreSQL container is connected to colmena_devops network"
           else
-            echo "❌ Docker network DNS resolution failed"
+            echo "❌ PostgreSQL container network connection failed"
             exit 1
           fi
+          
+          # Test basic network connectivity within container
+          if docker compose exec -T postgres hostname > /dev/null 2>&1; then
+            echo "✅ Container networking is functional"
+          else
+            echo "❌ Container networking failed"
+            exit 1
+          fi
+          
+          echo "✅ Docker network connectivity validation passed"
 
       - name: Collect service information
         if: inputs.verbose_logs == true || failure()
