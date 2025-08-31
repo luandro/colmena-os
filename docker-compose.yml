@@ -165,11 +165,10 @@ services:
       io.balena.features.balena-api: '1'
       io.balena.features.dbus: '1'
 
-# Use existing network to avoid conflicts
+# Create internal network for all services
 networks:
   colmena_devops:
-    external: true
-    name: local_colmena_devops
+    driver: bridge
 
 # Define named volumes for persistent data storage
 volumes:
