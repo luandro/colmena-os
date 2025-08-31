@@ -8,6 +8,7 @@ on:
   workflow_dispatch:
 
 env:
+  DOCKERHUB_USERNAME: communityfirst
   REGISTRY: docker.io
   IMAGE_NAME: colmena-app
 
@@ -38,7 +39,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -65,7 +66,7 @@ jobs:
 
             Unified ColmenaOS app image built successfully.
 
-            **Image:** \`${{ secrets.DOCKERHUB_USERNAME }}/colmena-app\`
+            **Image:** \`communityfirst/colmena-app\`
             **Platforms:** linux/amd64,linux/arm64
             **Commit:** \`${{ github.sha }}\``;
 
