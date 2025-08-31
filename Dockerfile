@@ -1,5 +1,5 @@
-# Unified Dockerfile for ColmenaOS - Frontend + Backend in single container
-# Based on existing submodule Dockerfiles with supervisor process management
+# Unified Dockerfile for ColmenaOS - Frontend + Backend with dynamic OpenAPI schema
+# Multi-stage build with temporary backend for schema generation
 
 # Stage 1: Backend builder  
 FROM python:3.10-alpine AS backend-builder
@@ -16,7 +16,9 @@ RUN apk add --no-cache \
     git \
     python3-dev \
     gettext \
-    nginx
+    nginx \
+    curl \
+    sqlite
 
 # Install Python dependencies
 RUN pip install -U pip && pip install -r requirements/prod.txt
@@ -24,36 +26,49 @@ RUN pip install -U pip && pip install -r requirements/prod.txt
 # Copy backend source
 COPY backend/ ./
 
-# Generate OpenAPI client
+# Generate OpenAPI client for Nextcloud
 RUN python -m openapi_python_generator \
     apps/nextcloud/openapi/schema.json \
     apps/nextcloud/openapi/client
 
-# Stage 2: Frontend builder with dynamic schema download
+# Stage 2: Schema generator (temporary backend instance)
+FROM backend-builder AS schema-generator
+
+# Set environment variables for schema generation
+ENV DJANGO_SETTINGS_MODULE=colmena.settings.prod \
+    COLMENA_SECRET_KEY=temp-build-key-12345 \
+    ALLOWED_HOSTS="localhost 127.0.0.1" \
+    CORS_ALLOWED_ORIGINS=http://localhost:3000 \
+    CSRF_TRUSTED_ORIGINS=http://localhost:3000 \
+    STAGE=local
+
+# Generate dynamic schema directly without database migration
+RUN python manage.py spectacular --color --file /tmp/openapi-schema.json
+
+# Stage 3: Frontend builder with dynamic schema
 FROM node:20-alpine AS frontend-builder
 
 WORKDIR /app/frontend
 
-# Install Python 3.10 and pip
+# Install system dependencies
 RUN apk add --no-cache python3 py3-pip curl
 
-# Copy all frontend files first
+# Copy frontend source
 COPY frontend/ ./
 
-# Install dependencies
-ENV OPENAPI_SCHEMA_LOCATION=skip
-RUN npm install --prefer-offline --no-audit --no-fund
+# Copy the dynamically generated schema from backend
+COPY --from=schema-generator /tmp/openapi-schema.json ./src/api/schema.json
 
-# Use existing schema file instead of generating during build
-ENV OPENAPI_SCHEMA_LOCATION=skip
+# Install frontend dependencies
+RUN npm ci --prefer-offline --no-audit --no-fund --ignore-scripts
 
-# Copy built backend from previous stage (for reference, not for schema generation)
-COPY --from=backend-builder /app/backend /app/backend
+# Generate TypeScript types from the dynamic schema
+RUN npm run openapi-optimize && npm run openapi-typegen
 
-# Build frontend using existing schema file
-RUN cd /app/frontend && npm run build
+# Build frontend
+RUN npm run build
 
-# Stage 3: Final production image
+# Stage 4: Final production image
 FROM python:3.10-alpine
 
 # Install system dependencies
@@ -73,15 +88,13 @@ COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist
 COPY --from=backend-builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
 COPY --from=backend-builder /app/backend /app/backend
 
-# Fix Django settings SECRET_KEY reference
-RUN sed -i 's/COLMENA_SECRET_KEY/SECRET_KEY/g' /app/backend/colmena/settings/prod.py
-
 # Copy nginx configuration for frontend  
 COPY frontend/devops/local/nginx/app /etc/nginx/http.d/default.conf
 
-# Copy backend entrypoint script
+# Copy backend entrypoint scripts
 COPY backend/devops/builder/entrypoint.sh /app/backend/entrypoint.sh
-RUN chmod +x /app/backend/entrypoint.sh
+COPY start-backend.sh /app/backend/start-backend.sh
+RUN chmod +x /app/backend/entrypoint.sh /app/backend/start-backend.sh
 
 # Fix gunicorn command to use Python module syntax
 RUN sed -i 's/gunicorn --timeout/python -m gunicorn --timeout/g' /app/backend/entrypoint.sh
