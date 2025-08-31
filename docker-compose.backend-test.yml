@@ -1,0 +1,76 @@
+services:
+  # Postgres (Database Service)
+  postgres:
+    image: postgres:13
+    command: postgres -c 'max_connections=10000'
+    container_name: colmena_postgres_test
+    hostname: ${POSTGRES_HOSTNAME:-postgres}
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-colmena}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-colmena}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pg_data_test:/var/lib/postgresql/data
+    networks:
+      - colmena_test
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-colmena} -d ${POSTGRES_DB:-colmena}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Backend Only (Testing)
+  colmena-backend:
+    image: colmena-backend:test
+    build:
+      context: .
+      dockerfile: Dockerfile.backend-only
+    env_file:
+      - .env
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    environment:
+      - STAGE=prod
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-colmena}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-colmena}
+      - SECRET_KEY=${SECRET_KEY}
+      - DEBUG=${DEBUG:-false}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-colmena.local,localhost,*.local,*}
+      - CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS:-http://localhost:8080}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
+      - POSTGRES_DATABASE=${POSTGRES_DB:-colmena}
+      - POSTGRES_USERNAME=${POSTGRES_USER:-colmena}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_HOSTNAME=${POSTGRES_HOSTNAME:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - MEDIA_ROOT=/app/backend/media
+      - STATIC_ROOT=/app/backend/static
+      - BACKEND_HOSTNAME=colmena-backend
+      - FRONTEND_HOSTNAME=colmena-backend
+      - SUPERADMIN_EMAIL=${SUPERADMIN_EMAIL:-admin@colmena.local}
+      - SUPERADMIN_PASSWORD=${SUPERADMIN_PASSWORD}
+      - GUNICORN_WORKER_TIMEOUT=${GUNICORN_WORKER_TIMEOUT:-120}
+      - GUNICORN_WORKERS=${GUNICORN_WORKERS:-3}
+      - PORT=8000
+    volumes:
+      - media_data_test:/app/backend/media
+      - static_data_test:/app/backend/static
+    networks:
+      - colmena_test
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+networks:
+  colmena_test:
+    driver: bridge
+
+volumes:
+  pg_data_test:
+  static_data_test:
+  media_data_test:

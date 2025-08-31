@@ -1,0 +1,60 @@
+# Backend-only Dockerfile for ColmenaOS - Testing backend independently
+# Based on existing backend Dockerfile
+
+FROM python:3.10-alpine
+
+WORKDIR /app/backend
+
+# Install system dependencies
+RUN apk add --no-cache \
+    alpine-sdk \
+    git \
+    python3-dev \
+    gettext \
+    nginx
+
+# Copy backend requirements
+COPY backend/requirements/base.txt /app/backend/requirements/base.txt
+COPY backend/requirements/prod.txt /app/backend/requirements/prod.txt
+
+# Install Python dependencies
+RUN pip install -U pip && pip install -r requirements/prod.txt
+
+# Copy backend source
+COPY backend/ ./
+
+# Generate OpenAPI client
+RUN python -m openapi_python_generator \
+    apps/nextcloud/openapi/schema.json \
+    apps/nextcloud/openapi/client
+
+# Fix Django settings SECRET_KEY reference
+RUN sed -i 's/COLMENA_SECRET_KEY/SECRET_KEY/g' /app/backend/colmena/settings/prod.py
+
+# Copy backend entrypoint script
+COPY backend/devops/builder/entrypoint.sh /app/backend/entrypoint.sh
+RUN chmod +x /app/backend/entrypoint.sh
+
+# Fix gunicorn command to use Python module syntax
+RUN sed -i 's/gunicorn --timeout/python -m gunicorn --timeout/g' /app/backend/entrypoint.sh
+
+# Create directories for Django
+RUN mkdir -p /app/backend/media /app/backend/static
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app/backend \
+    DJANGO_SETTINGS_MODULE=colmena.settings.prod \
+    STATIC_ROOT=/app/backend/static \
+    MEDIA_ROOT=/app/backend/media \
+    PORT=8000
+
+# Expose backend port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:8000/api/ || exit 1
+
+# Start backend directly
+CMD ["/app/backend/entrypoint.sh", "start_prod"]

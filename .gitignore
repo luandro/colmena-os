@@ -64,6 +64,7 @@ old/
 .serena/
 .unified-cache/
 .unified-temp/
+.playwright-mcp/
 
 # Development artifacts
 *.pyc
