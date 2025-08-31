@@ -87,6 +87,7 @@ jobs:
               #   context: colmena-devops/devops/apps/nextcloud/
               #   dockerfile: builder/Dockerfile
               image: nextcloud:28.0.3-apache  # Use official Nextcloud image for testing
+              container_name: colmena_nextcloud
               environment:
                 - SQLITE_DATABASE=nextcloud
                 - NEXTCLOUD_TRUSTED_DOMAINS=\${NEXTCLOUD_TRUSTED_DOMAINS:-colmena.local,localhost,*.local,192.168.*.*,10.*.*.*}
@@ -95,6 +96,15 @@ jobs:
               # Remove API wrapper port since official image doesn't have it
               ports:
                 - 8003:80
+              volumes:
+                - nextcloud_data:/var/www/html
+              networks:
+                - colmena_devops
+              restart: unless-stopped
+              labels:
+                io.balena.features.supervisor-api: '1'
+                io.balena.features.balena-api: '1'
+                io.balena.features.dbus: '1'
             
             mail:
               # Comment out build section to avoid submodule dependency
@@ -103,11 +113,44 @@ jobs:
               #   dockerfile: builder/Dockerfile
               image: marlonb/mailcrab:latest  # Use official MailCrab image directly
               # Remove build args since we're using pre-built image
+              container_name: colmena_mail
+              ports:
+                - 1080:1080
+                - 1025:1025
+              networks:
+                colmena_devops:
+                  aliases:
+                    - mail
+              restart: unless-stopped
+              labels:
+                io.balena.features.supervisor-api: '1'
+          
+          # Define networks and volumes (required for overridden services)
+          networks:
+            colmena_devops:
+              driver: bridge
+          
+          volumes:
+            pg_data:
+            pgadmin_data:
+            nextcloud_data:
+            nextcloud_apps:
+            static_data:
+            media_data:
           EOF
 
       - name: Start infrastructure services (without main app)
         run: |
           echo "🚀 Starting infrastructure services..."
+          
+          echo "📋 Validating docker-compose configuration..."
+          docker compose config --quiet || echo "Configuration validation failed"
+          
+          echo "📋 Checking services to start..."
+          docker compose config --services
+          
+          echo "📋 Checking override file..."
+          cat docker-compose.override.yml
           
           # Start only infrastructure services first
           docker compose up -d postgres pgadmin nextcloud mail
