@@ -109,7 +109,7 @@ services:
   # Colmena Unified App (Frontend + Backend in single container)
   # ----------------------------------------------------------------------------
   colmena-app:
-    image: colmena-app:test
+    image: communityfirst/colmena-app:latest
     build:
       context: .
       dockerfile: Dockerfile

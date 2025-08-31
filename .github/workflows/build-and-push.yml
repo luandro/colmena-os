@@ -1,123 +1,32 @@
-name: Build and Push Multi-Arch Images
+name: Build and Push ColmenaOS App
 
 on:
-  repository_dispatch:
-    types: [submodule-update]
   push:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
   workflow_dispatch:
-    inputs:
-      services:
-        description: 'Services to build (comma-separated: frontend,backend,devops or "all")'
-        required: false
-        default: 'all'
-        type: string
-      platforms:
-        description: 'Target platforms'
-        required: false
-        default: 'linux/amd64,linux/arm64'
-        type: string
 
 env:
-  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+  DOCKERHUB_USERNAME: communityfirst
   REGISTRY: docker.io
+  IMAGE_NAME: colmena-app
 
 jobs:
-  prepare:
+  build-and-push:
     runs-on: ubuntu-latest
-    outputs:
-      services: ${{ steps.determine_services.outputs.services }}
-      tag_suffix: ${{ steps.determine_tag.outputs.tag_suffix }}
-      platforms: ${{ steps.determine_platforms.outputs.platforms }}
     steps:
-      - name: Checkout code with submodules
+      - name: Checkout with submodules
         uses: actions/checkout@v4
         with:
           submodules: recursive
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Determine services to build
-        id: determine_services
-        run: |
-          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
-            # Build only changed services from submodule update
-            services=()
-            if [ "${{ github.event.client_payload.frontend_changed }}" = "true" ]; then
-              services+=("frontend")
-            fi
-            if [ "${{ github.event.client_payload.backend_changed }}" = "true" ]; then
-              services+=("backend")
-            fi
-            if [ "${{ github.event.client_payload.devops_changed }}" = "true" ]; then
-              services+=("devops")
-            fi
-
-            if [ ${#services[@]} -eq 0 ]; then
-              services=("frontend" "backend" "devops")  # Fallback
-            fi
-
-            services_json=$(printf '%s\n' "${services[@]}" | jq -R . | jq -s .)
-          elif [ "${{ inputs.services }}" != "" ] && [ "${{ inputs.services }}" != "all" ]; then
-            # Use input services
-            IFS=',' read -ra ADDR <<< "${{ inputs.services }}"
-            services_json=$(printf '%s\n' "${ADDR[@]}" | jq -R . | jq -s .)
-          else
-            # Build all services
-            services_json='["frontend", "backend", "devops"]'
-          fi
-
-          echo "services=$services_json" >> $GITHUB_OUTPUT
-          echo "Services to build: $services_json"
-
-      - name: Determine tag suffix
-        id: determine_tag
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "tag_suffix=-pr${{ github.event.number }}" >> $GITHUB_OUTPUT
-          elif [ "${{ github.ref }}" = "refs/heads/develop" ]; then
-            echo "tag_suffix=-dev" >> $GITHUB_OUTPUT
-          else
-            echo "tag_suffix=" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Determine platforms
-        id: determine_platforms
-        run: |
-          if [ "${{ inputs.platforms }}" != "" ]; then
-            echo "platforms=${{ inputs.platforms }}" >> $GITHUB_OUTPUT
-          else
-            echo "platforms=linux/amd64,linux/arm64" >> $GITHUB_OUTPUT
-          fi
-
-  build-backend-devops:
-    needs: prepare
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        service: [backend, devops]
-      fail-fast: false
-    steps:
-      - name: Checkout code with submodules
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up QEMU for multi-arch builds
+      - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
-      - name: Cache Docker layers
-        uses: actions/cache@v4
-        with:
-          path: /tmp/.buildx-cache-${{ matrix.service }}
-          key: ${{ runner.os }}-buildx-${{ matrix.service }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-${{ matrix.service }}-
 
       - name: Login to Docker Hub
         if: github.event_name != 'pull_request'
@@ -130,434 +39,35 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-${{ matrix.service }}
+          images: ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr
-            type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Determine Dockerfile path
-        id: dockerfile
-        run: |
-          case "${{ matrix.service }}" in
-            backend)
-              echo "path=./backend" >> $GITHUB_OUTPUT
-              echo "dockerfile=./backend/devops/builder/Dockerfile" >> $GITHUB_OUTPUT
-              ;;
-            devops)
-              echo "path=./colmena-devops" >> $GITHUB_OUTPUT
-              if [ -f "./colmena-devops/devops/apps/nextcloud/builder/Dockerfile" ]; then
-                echo "dockerfile=./colmena-devops/devops/apps/nextcloud/builder/Dockerfile" >> $GITHUB_OUTPUT
-              else
-                echo "dockerfile=./colmena-devops/Dockerfile" >> $GITHUB_OUTPUT
-              fi
-              ;;
-            *)
-              echo "Unknown service: ${{ matrix.service }}"
-              exit 1
-              ;;
-          esac
-
-      - name: Build and push Docker image
+      - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: ${{ steps.dockerfile.outputs.path }}
-          file: ${{ steps.dockerfile.outputs.dockerfile }}
-          platforms: ${{ needs.prepare.outputs.platforms }}
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
-          load: ${{ github.event_name == 'pull_request' }}
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-${{ matrix.service }}:latest${{ needs.prepare.outputs.tag_suffix }}
-            ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-${{ matrix.service }}:${{ github.sha }}
-          build-args: |
-            NEXTCLOUD_VERSION=28.0.3
-            NEXTCLOUD_API_WRAPPER_PORT=5001
-            APACHE_APP_PATH=/var/www/nc_api_wrapper
-            BUILD_CONTEXT=devops/apps/nextcloud/builder
-            OPENAPI_SCHEMA_LOCATION=http://host.docker.internal:8000/api/schema
-          labels: |
-            org.opencontainers.image.title=ColmenaOS ${{ matrix.service }}
-            org.opencontainers.image.description=ColmenaOS ${{ matrix.service }} service
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
-          cache-from: type=local,src=/tmp/.buildx-cache-${{ matrix.service }}
-          cache-to: type=local,dest=/tmp/.buildx-cache-${{ matrix.service }}-new,mode=max
-
-      - name: Move cache
-        run: |
-          rm -rf /tmp/.buildx-cache-${{ matrix.service }}
-          mv /tmp/.buildx-cache-${{ matrix.service }}-new /tmp/.buildx-cache-${{ matrix.service }}
-
-  start-backend:
-    needs: [prepare, build-backend-devops]
-    runs-on: ubuntu-latest
-    if: contains(fromJson(needs.prepare.outputs.services), 'frontend') && contains(fromJson(needs.prepare.outputs.services), 'backend')
-    services:
-      postgres:
-        image: postgres:13
-        env:
-          POSTGRES_PASSWORD: testpassword
-          POSTGRES_USER: testuser
-          POSTGRES_DB: colmena_dev
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U testuser -d colmena_dev"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-    steps:
-      - name: Wait for PostgreSQL service health check
-        run: |
-          echo "⏳ Waiting for PostgreSQL service to pass health checks..."
-          # PostgreSQL service should be healthy before we proceed
-          sleep 30
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ env.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Start Nextcloud service
-        run: |
-          # Handle different image sources for PRs vs branch builds
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "🔍 Using locally built devops image for PR"
-            # Image was loaded locally by build-backend-devops job
-          else
-            echo "🔄 Pulling devops/Nextcloud image from registry..."
-            docker pull ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-devops:${{ github.sha }}
-          fi
-
-          echo "🔍 Waiting for PostgreSQL to be ready..."
-          # Give PostgreSQL service time to initialize
-          sleep 10
-
-          # Wait for PostgreSQL service to be fully ready
-          max_attempts=30
-          attempt=0
-
-          while [ $attempt -lt $max_attempts ]; do
-            if docker run --rm --network host -e PGPASSWORD=testpassword postgres:13 \
-               psql -h localhost -U testuser -d colmena_dev -c "SELECT version();" >/dev/null 2>&1; then
-              echo "✅ PostgreSQL is ready!"
-              break
-            fi
-
-            attempt=$((attempt + 1))
-            echo "Attempt $attempt/$max_attempts - PostgreSQL not ready yet, waiting..."
-            sleep 5
-          done
-
-          if [ $attempt -eq $max_attempts ]; then
-            echo "❌ PostgreSQL failed to start within timeout"
-            echo "🔍 Checking PostgreSQL service status..."
-            docker ps -a | grep postgres || echo "No PostgreSQL containers found"
-            exit 1
-          fi
-
-          echo "🚀 Starting Nextcloud service..."
-          docker run -d \
-            --name colmena-nextcloud \
-            --network host \
-            -e POSTGRES_DB=colmena_dev \
-            -e POSTGRES_USER=testuser \
-            -e POSTGRES_PASSWORD=testpassword \
-            -e POSTGRES_HOST=localhost \
-            -e NEXTCLOUD_ADMIN_USER=admin \
-            -e NEXTCLOUD_ADMIN_PASSWORD=admin123 \
-            -e NEXTCLOUD_TRUSTED_DOMAINS=localhost \
-            -p 80:80 \
-            -p 5001:5001 \
-            ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-devops:${{ github.sha }}
-
-          echo "✅ Nextcloud container started"
-          docker ps -a --filter name=colmena-nextcloud
-
-      - name: Wait for Nextcloud to be ready
-        run: |
-          echo "⏳ Waiting for Nextcloud to be ready..."
-          max_attempts=30
-          attempt=0
-
-          while [ $attempt -lt $max_attempts ]; do
-            if curl -f http://localhost/status.php >/dev/null 2>&1; then
-              echo "✅ Nextcloud is ready!"
-              break
-            fi
-
-            attempt=$((attempt + 1))
-            echo "Attempt $attempt/$max_attempts - Nextcloud not ready yet, waiting..."
-            if [ $((attempt % 5)) -eq 0 ]; then
-              echo "📋 Nextcloud container logs (last 10 lines):"
-              docker logs --tail 10 colmena-nextcloud
-            fi
-            sleep 10
-          done
-
-          if [ $attempt -eq $max_attempts ]; then
-            echo "❌ Nextcloud failed to start within timeout"
-            echo "📋 Full Nextcloud logs:"
-            docker logs colmena-nextcloud
-            echo "🔍 Container status:"
-            docker ps -a --filter name=colmena-nextcloud
-            exit 1
-          fi
-
-      - name: Start backend service
-        run: |
-          # Handle different image sources for PRs vs branch builds
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "🔍 Using locally built backend image for PR"
-            # Image was loaded locally by build-backend-devops job
-          else
-            echo "🔄 Pulling backend image from registry..."
-            docker pull ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-backend:${{ github.sha }}
-          fi
-
-          echo "🚀 Starting backend service..."
-          docker run -d \
-            --name colmena-backend \
-            --network host \
-            -e DATABASE_URL=postgresql://testuser:testpassword@host.docker.internal:5432/colmena_dev \
-            -e POSTGRES_HOSTNAME=host.docker.internal \
-            -e POSTGRES_PORT=5432 \
-            -e POSTGRES_DATABASE=colmena_dev \
-            -e POSTGRES_USERNAME=testuser \
-            -e POSTGRES_PASSWORD=testpassword \
-            -e PGHOST=host.docker.internal \
-            -e PGPORT=5432 \
-            -e PGDATABASE=colmena_dev \
-            -e PGUSER=testuser \
-            -e PGPASSWORD=testpassword \
-            -e COLMENA_SECRET_KEY=test-secret-key-for-ci-minimum-50-characters-long-random-string-here \
-            -e DEBUG=1 \
-            -e LOG_LEVEL=DEBUG \
-            -e DJANGO_SETTINGS_MODULE=colmena.settings.dev \
-            -e CSRF_TRUSTED_ORIGINS=http://localhost:8000 \
-            -e CORS_ALLOWED_ORIGINS=http://localhost:8000 \
-            -e BACKEND_HOSTNAME=http://localhost:8000 \
-            -e FRONTEND_HOSTNAME=http://localhost:3000 \
-            -e NEXTCLOUD_URL=http://localhost \
-            -e NEXTCLOUD_API_URL=http://localhost/ocs/v2.php \
-            -e NEXTCLOUD_API_WRAPPER_URL=http://localhost:5001 \
-            -e NEXTCLOUD_ADMIN_GROUP_NAME=admin \
-            -e NEXTCLOUD_DEFAULT_USER_QUOTA=200mb \
-            -e SUPERADMIN_EMAIL=admin@colmena.local \
-            -e SUPERADMIN_PASSWORD=admin123456 \
-            -e NEXTCLOUD_ADMIN_USER=admin \
-            -e NEXTCLOUD_ADMIN_PASSWORD=admin123 \
-            -e GUNICORN_WORKER_TIMEOUT=120 \
-            -e GUNICORN_WORKERS=2 \
-            -e PORT=8000 \
-            -p 8000:8000 \
-            ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-backend:${{ github.sha }}
-
-          echo "✅ Backend container started"
-          docker ps -a --filter name=colmena-backend
-
-          # Give container a moment to start
-          sleep 3
-
-          echo "🔍 Checking if container is running..."
-          if docker ps --filter name=colmena-backend --filter status=running --quiet | grep -q .; then
-            echo "✅ Container is running"
-            echo "🔍 Checking environment variables in container..."
-            docker exec colmena-backend env | grep -E "(COLMENA_SECRET_KEY|DEBUG|DATABASE_URL|POSTGRES_|CSRF_|CORS_)" || echo "Environment variables not found"
-          else
-            echo "❌ Container is not running, checking logs..."
-            docker logs colmena-backend
-          fi
-
-      - name: Wait for backend to be ready
-        run: |
-          echo "⏳ Waiting for backend to be ready..."
-          max_attempts=30
-          attempt=0
-
-          while [ $attempt -lt $max_attempts ]; do
-            if curl -f http://localhost:8000/api/schema >/dev/null 2>&1; then
-              echo "✅ Backend is ready!"
-              echo "📋 Schema preview:"
-              curl -s http://localhost:8000/api/schema | head -20
-              break
-            fi
-
-            attempt=$((attempt + 1))
-            echo "Attempt $attempt/$max_attempts - Backend not ready yet, waiting..."
-
-            # Show logs every 5 attempts for debugging
-            if [ $((attempt % 5)) -eq 0 ]; then
-              echo "📋 Backend container logs (last 15 lines):"
-              docker logs --tail 15 colmena-backend
-              echo "🔍 Container status:"
-              docker ps -a --filter name=colmena-backend
-              echo "🌐 Network connectivity test:"
-              curl -v http://localhost:8000/admin/ 2>&1 | head -10 || echo "Connection failed"
-            fi
-            sleep 10
-          done
-
-          if [ $attempt -eq $max_attempts ]; then
-            echo "❌ Backend failed to start within timeout"
-            echo "📋 Full backend logs:"
-            docker logs colmena-backend
-            echo "📋 Nextcloud logs (last 20 lines):"
-            docker logs --tail 20 colmena-nextcloud
-            echo "🔍 All containers status:"
-            docker ps -a
-            echo "🌐 Port usage:"
-            netstat -tlnp | grep -E ':(80|8000|5432|5001)'
-            exit 1
-          fi
-
-  build-frontend:
-    needs: [prepare, start-backend]
-    runs-on: ubuntu-latest
-    if: contains(fromJson(needs.prepare.outputs.services), 'frontend')
-    steps:
-      - name: Checkout code with submodules
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Prepare OpenAPI schema for frontend build
-        run: |
-          echo "📋 Copying OpenAPI schema from backend to frontend..."
-          mkdir -p frontend/src/api
-          cp backend/apps/nextcloud/openapi/schema.json frontend/src/api/schema.json
-          echo "✅ Schema copied successfully"
-          ls -la frontend/src/api/schema.json
-
-          echo "📋 Modifying package.json to skip openapi-download during build..."
-          # Create a temporary package.json that skips openapi-download
-          cd frontend
-          # Backup original package.json
-          cp package.json package.json.bak
-          # Remove openapi-download from prepare script to avoid network call
-          sed -i 's/"npm run openapi-tasks"/"npm run openapi-optimize \&\& npm run openapi-typegen"/' package.json
-          echo "✅ Modified package.json to skip download step"
-
-      - name: Set up QEMU for multi-arch builds
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Cache Docker layers
-        uses: actions/cache@v4
-        with:
-          path: /tmp/.buildx-cache-frontend
-          key: ${{ runner.os }}-buildx-frontend-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-frontend-
-
-      - name: Login to Docker Hub
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          username: ${{ env.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-frontend
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=sha,prefix={{branch}}-
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Build and push frontend Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: ./frontend
-          file: ./frontend/devops/builder/Dockerfile.local
-          platforms: ${{ needs.prepare.outputs.platforms }}
-          push: ${{ github.event_name != 'pull_request' }}
-          load: ${{ github.event_name == 'pull_request' }}
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-frontend:latest${{ needs.prepare.outputs.tag_suffix }}
-            ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-frontend:${{ github.sha }}
-          build-args: |
-            SKIP_OPENAPI_DOWNLOAD=true
-          labels: |
-            org.opencontainers.image.title=ColmenaOS frontend
-            org.opencontainers.image.description=ColmenaOS frontend service
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
-          cache-from: type=local,src=/tmp/.buildx-cache-frontend
-          cache-to: type=local,dest=/tmp/.buildx-cache-frontend-new,mode=max
-
-      - name: Move cache
-        run: |
-          rm -rf /tmp/.buildx-cache-frontend
-          mv /tmp/.buildx-cache-frontend-new /tmp/.buildx-cache-frontend
-
-      - name: Cleanup services
-        if: always()
-        run: |
-          echo "🧹 Cleaning up services..."
-          docker stop colmena-backend colmena-nextcloud || true
-          docker rm colmena-backend colmena-nextcloud || true
-          echo "✅ Services cleaned up"
-
-  notify-completion:
-    needs: [prepare, build-backend-devops, build-frontend, start-backend]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Determine build status
-        id: status
-        run: |
-          backend_devops_result="${{ needs.build-backend-devops.result }}"
-          frontend_result="${{ needs.build-frontend.result }}"
-          start_backend_result="${{ needs.start-backend.result }}"
-
-          if [[ "$backend_devops_result" == "success" ]] && [[ "$frontend_result" == "success" || "$frontend_result" == "skipped" ]] && [[ "$start_backend_result" == "success" || "$start_backend_result" == "skipped" ]]; then
-            echo "status=success" >> $GITHUB_OUTPUT
-            echo "message=✅ All Docker images built and pushed successfully" >> $GITHUB_OUTPUT
-          else
-            echo "status=failure" >> $GITHUB_OUTPUT
-            echo "message=❌ Docker image build failed" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Trigger Balena deployment on success
-        if: steps.status.outputs.status == 'success' && (github.ref == 'refs/heads/develop' || github.event_name == 'repository_dispatch')
-        uses: peter-evans/repository-dispatch@v3
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          event-type: deploy-to-balena-draft
-          client-payload: |
-            {
-              "services": ${{ needs.prepare.outputs.services }},
-              "sha": "${{ github.sha }}",
-              "ref": "${{ github.ref }}",
-              "trigger": "${{ github.event_name }}"
-            }
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Comment on PR
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           script: |
-            const status = "${{ steps.status.outputs.status }}";
-            const message = "${{ steps.status.outputs.message }}";
-            const services = ${{ needs.prepare.outputs.services }};
+            const body = `## 🐳 Docker Build Status: ✅ SUCCESS
 
-            const body = `## 🐳 Docker Build Status: ${status === 'success' ? '✅ SUCCESS' : '❌ FAILED'}
+            Unified ColmenaOS app image built successfully.
 
-            ${message}
-
-            **Services built:** ${services.join(', ')}
-            **Platforms:** ${{ needs.prepare.outputs.platforms }}
+            **Image:** \`communityfirst/colmena-app\`
+            **Platforms:** linux/amd64,linux/arm64
             **Commit:** \`${{ github.sha }}\``;
 
             github.rest.issues.createComment({

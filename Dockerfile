@@ -1,124 +1,94 @@
-# Unified Dockerfile for ColmenaOS - Frontend + Backend with dynamic OpenAPI schema
-# Multi-stage build with temporary backend for schema generation
+# syntax=docker/dockerfile:1
+# Unified Dockerfile for ColmenaOS - Frontend + Backend combined image
 
-# Stage 1: Backend builder  
+# Stage 1: Frontend builder
+FROM node:20-alpine AS frontend-builder
+WORKDIR /opt/frontend
+COPY frontend/ .
+RUN npm ci --prefer-offline --no-audit --no-fund
+RUN npm run build
+
+# Stage 2: Backend preparation  
 FROM python:3.10-alpine AS backend-builder
+WORKDIR /opt/backend
 
-WORKDIR /app/backend
-
-# Copy backend requirements
-COPY backend/requirements/base.txt /app/backend/requirements/base.txt
-COPY backend/requirements/prod.txt /app/backend/requirements/prod.txt
-
-# Install system dependencies
+# Install system dependencies for Python build
 RUN apk add --no-cache \
     alpine-sdk \
     git \
     python3-dev \
-    gettext \
-    nginx \
-    curl \
-    sqlite
+    gettext
 
-# Install Python dependencies
-RUN pip install -U pip && pip install -r requirements/prod.txt
-
-# Copy backend source
-COPY backend/ ./
+# Copy backend source and install dependencies
+COPY backend/ .
+RUN pip install -U pip
+RUN pip install -r requirements/prod.txt
 
 # Generate OpenAPI client for Nextcloud
 RUN python -m openapi_python_generator \
     apps/nextcloud/openapi/schema.json \
     apps/nextcloud/openapi/client
 
-# Stage 2: Schema generator (temporary backend instance)
-FROM backend-builder AS schema-generator
-
-# Set environment variables for schema generation
-ENV DJANGO_SETTINGS_MODULE=colmena.settings.prod \
-    COLMENA_SECRET_KEY=temp-build-key-12345 \
-    ALLOWED_HOSTS="localhost 127.0.0.1" \
-    CORS_ALLOWED_ORIGINS=http://localhost:3000 \
-    CSRF_TRUSTED_ORIGINS=http://localhost:3000 \
-    STAGE=local
-
-# Generate dynamic schema directly without database migration
-RUN python manage.py spectacular --color --file /tmp/openapi-schema.json
-
-# Stage 3: Frontend builder with dynamic schema
-FROM node:20-alpine AS frontend-builder
-
-WORKDIR /app/frontend
-
-# Install system dependencies
-RUN apk add --no-cache python3 py3-pip curl
-
-# Copy frontend source
-COPY frontend/ ./
-
-# Copy the dynamically generated schema from backend
-COPY --from=schema-generator /tmp/openapi-schema.json ./src/api/schema.json
-
-# Install frontend dependencies
-RUN npm ci --prefer-offline --no-audit --no-fund --ignore-scripts
-
-# Generate TypeScript types from the dynamic schema
-RUN npm run openapi-optimize && npm run openapi-typegen
-
-# Build frontend
-RUN npm run build
-
-# Stage 4: Final production image
+# Stage 3: Final unified image
 FROM python:3.10-alpine
 
-# Install system dependencies
+# Install runtime dependencies
 RUN apk add --no-cache \
     nginx \
     supervisor \
     gettext \
-    libstdc++
+    curl
 
-# Create app directory structure
-WORKDIR /app
-
-# Copy built frontend from builder
-COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist
-
-# Copy backend with installed dependencies
+# Set up backend
+WORKDIR /opt/app
 COPY --from=backend-builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
-COPY --from=backend-builder /app/backend /app/backend
+COPY --from=backend-builder /opt/backend .
 
-# Copy nginx configuration for frontend  
-COPY frontend/devops/local/nginx/app /etc/nginx/http.d/default.conf
+# Set up frontend
+COPY --from=frontend-builder /opt/frontend/dist /usr/share/nginx/html
+COPY frontend/devops/local/nginx/app /etc/nginx/conf.d/default.conf
 
-# Copy backend entrypoint scripts
-COPY backend/devops/builder/entrypoint.sh /app/backend/entrypoint.sh
-COPY start-backend.sh /app/backend/start-backend.sh
-RUN chmod +x /app/backend/entrypoint.sh /app/backend/start-backend.sh
+# Configure backend entrypoint
+COPY backend/devops/builder/entrypoint.sh .
+RUN chmod +x entrypoint.sh
+RUN chown -R nobody:nobody /opt/app
 
-# Fix gunicorn command to use Python module syntax
-RUN sed -i 's/gunicorn --timeout/python -m gunicorn --timeout/g' /app/backend/entrypoint.sh
+# Create supervisor configuration
+RUN mkdir -p /var/log/supervisor
+COPY <<EOF /etc/supervisor/conf.d/supervisord.conf
+[supervisord]
+nodaemon=true
+user=root
+logfile=/var/log/supervisor/supervisord.log
+pidfile=/var/run/supervisord.pid
 
-# Copy supervisor configuration
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+[program:backend]
+command=/opt/app/entrypoint.sh start_prod
+directory=/opt/app
+user=nobody
+autostart=true
+autorestart=true
+stdout_logfile=/var/log/supervisor/backend.log
+stderr_logfile=/var/log/supervisor/backend.log
 
-# Create directories for Django
-RUN mkdir -p /app/backend/media /app/backend/static
+[program:nginx]
+command=nginx -g "daemon off;"
+autostart=true
+autorestart=true
+stdout_logfile=/var/log/supervisor/nginx.log
+stderr_logfile=/var/log/supervisor/nginx.log
+EOF
 
-# Set environment variables
+# Environment variables
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app/backend \
-    DJANGO_SETTINGS_MODULE=colmena.settings.prod \
-    STATIC_ROOT=/app/backend/static \
-    MEDIA_ROOT=/app/backend/media \
-    PORT=8000
+    PYTHONPATH=/opt/app
 
-# Expose ports: 80 for frontend (nginx), 8000 for backend (gunicorn)
+# Expose ports
 EXPOSE 80 8000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:80/ || exit 1
+    CMD curl -f http://localhost:80/ && curl -f http://localhost:8000/api/schema || exit 1
 
-# Start supervisor to manage both processes
+# Start supervisor
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
