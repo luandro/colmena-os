@@ -16,7 +16,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-colmena}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_PORT:-7432}:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
       - ./docker/postgres-init:/docker-entrypoint-initdb.d
@@ -42,7 +42,7 @@ services:
       - PGADMIN_DEFAULT_EMAIL=${PGADMIN_DEFAULT_EMAIL:-admin@colmena.local}
       - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_DEFAULT_PASSWORD}
     ports:
-      - 5050:80
+      - 7050:80
     volumes:
       - pgadmin_data:/var/lib/pgadmin
     networks:
@@ -71,8 +71,8 @@ services:
     volumes:
       - nextcloud_data:/var/www/html
     ports:
-      - 8003:80
-      - 8004:5001
+      - 7103:80
+      - 7104:5001
     environment:
       - SQLITE_DATABASE=nextcloud
       - NEXTCLOUD_TRUSTED_DOMAINS=${NEXTCLOUD_TRUSTED_DOMAINS:-colmena.local,localhost,*.local,192.168.*.*,10.*.*.*}
@@ -94,8 +94,8 @@ services:
       args:
         - MAILCRAB_VERSION=latest
     ports:
-      - 1080:1080
-      - 1025:1025
+      - 7080:1080
+      - 7025:1025
     networks:
       colmena_devops:
         aliases:
@@ -115,8 +115,8 @@ services:
     env_file:
       - .env
     ports:
-      - "${HTTP_PORT:-80}:80"
-      - "${BACKEND_PORT:-8000}:8000"
+      - "${HTTP_PORT:-7180}:80"
+      - "${BACKEND_PORT:-7100}:8000"
     environment:
       - STAGE=dev
       - DATABASE_URL=postgresql://${POSTGRES_USER:-colmena}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-colmena}
