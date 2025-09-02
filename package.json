@@ -1,0 +1,14 @@
+{
+  "name": "colmena-os-tests",
+  "version": "1.0.0",
+  "description": "Integration tests for ColmenaOS",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "test:report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.40.0"
+  }
+}
