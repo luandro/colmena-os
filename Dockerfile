@@ -48,7 +48,8 @@ RUN apk add --no-cache \
     nginx \
     supervisor \
     gettext \
-    curl
+    curl \
+    postgresql-libs
 
 # Set up backend
 WORKDIR /opt/app
@@ -57,11 +58,70 @@ COPY --from=backend-builder /opt/backend .
 
 # Set up frontend
 COPY --from=frontend-builder /opt/frontend/dist /usr/share/nginx/html
-COPY frontend/devops/local/nginx/app /etc/nginx/conf.d/default.conf
+
+# Create unified nginx configuration with backend proxy support
+# (Instead of using frontend submodule config which lacks backend proxy)
+COPY <<EOF /etc/nginx/http.d/default.conf
+server {
+    listen 80;
+    
+    # Frontend serving (static files)
+    location / {
+        root /usr/share/nginx/html;
+        index index.html;
+        try_files \$uri \$uri/ /index.html;
+    }
+
+    # Backend API proxy
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_connect_timeout 30s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+    }
+
+    # Django static assets
+    location /static/ {
+        alias /opt/app/static/;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location /media/ {
+        alias /opt/app/media/;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+}
+EOF
 
 # Configure backend entrypoint
 COPY backend/devops/builder/entrypoint.sh .
 RUN chmod +x entrypoint.sh
+COPY start-backend-debug.sh /opt/app/start-backend-debug.sh
+RUN chmod +x /opt/app/start-backend-debug.sh
+
+# Create wrapper script to fix gunicorn command path issue
+# (Backend submodule uses 'gunicorn' but it's only available as 'python -m gunicorn')
+COPY <<EOF /opt/app/start_backend.sh
+#!/bin/sh
+cd /opt/app
+
+# Create a temporary entrypoint with fixed gunicorn command
+sed 's/gunicorn/python -m gunicorn/g' entrypoint.sh > entrypoint_fixed.sh
+chmod +x entrypoint_fixed.sh
+
+# Execute the fixed entrypoint
+exec ./entrypoint_fixed.sh start_prod
+EOF
+
+RUN chmod +x /opt/app/start_backend.sh
+RUN mkdir -p /opt/app/static && chown -R nobody:nobody /opt/app/static
+RUN mkdir -p /opt/app/media && chown -R nobody:nobody /opt/app/media
 RUN chown -R nobody:nobody /opt/app
 
 # Create supervisor configuration
@@ -74,20 +134,24 @@ logfile=/var/log/supervisor/supervisord.log
 pidfile=/var/run/supervisord.pid
 
 [program:backend]
-command=/opt/app/entrypoint.sh start_prod
+command=/opt/app/start_backend.sh
 directory=/opt/app
 user=nobody
 autostart=true
 autorestart=true
-stdout_logfile=/var/log/supervisor/backend.log
-stderr_logfile=/var/log/supervisor/backend.log
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
 
 [program:nginx]
 command=nginx -g "daemon off;"
 autostart=true
 autorestart=true
-stdout_logfile=/var/log/supervisor/nginx.log
-stderr_logfile=/var/log/supervisor/nginx.log
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
 EOF
 
 # Environment variables
