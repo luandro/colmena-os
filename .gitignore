@@ -102,3 +102,9 @@ test-schema/
 
 # Development TODO file
 TODO.md
+TASK.md
+\n+# Root-level test artifacts and reports
+playwright-report/
+test-results/
+FINAL-SUCCESS-REPORT.md
+TEST-RESULTS.md
