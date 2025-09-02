@@ -109,9 +109,7 @@ services:
   # ----------------------------------------------------------------------------
   colmena-app:
     image: colmena-app:local
-    build:
-      context: .
-      dockerfile: Dockerfile
+    command: ["/opt/app/start-backend-debug.sh"]
     env_file:
       - .env
     ports:
@@ -120,23 +118,23 @@ services:
     environment:
       - STAGE=dev
       - DATABASE_URL=postgresql://${POSTGRES_USER:-colmena}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-colmena}
-      - SECRET_KEY=${SECRET_KEY}
+      - COLMENA_SECRET_KEY=${SECRET_KEY:-colmena-local-dev-secret}
       - DEBUG=${DEBUG:-true}
-      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-colmena.local,localhost,*.local,*}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-colmena.local localhost *.local *}
       - CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS:-http://localhost:8080}
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
       - POSTGRES_DATABASE=${POSTGRES_DB:-colmena}
       - POSTGRES_USERNAME=${POSTGRES_USER:-colmena}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_HOSTNAME=${POSTGRES_HOSTNAME:-postgres}
-      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_PORT=5432
       - EMAIL_HOST=mail
       - EMAIL_PORT=1025
       - EMAIL_USE_TLS=false
       - NEXTCLOUD_URL=http://nextcloud
       - NEXTCLOUD_API_WRAPPER_URL=http://nextcloud:5001
-      - NEXTCLOUD_USERNAME=${NEXTCLOUD_ADMIN_USER:-admin}
-      - NEXTCLOUD_PASSWORD=${NEXTCLOUD_ADMIN_PASSWORD}
+      - NEXTCLOUD_ADMIN_USER=${NEXTCLOUD_ADMIN_USER:-admin}
+      - NEXTCLOUD_ADMIN_PASSWORD=${NEXTCLOUD_ADMIN_PASSWORD}
       - MEDIA_ROOT=/opt/app/media
       - STATIC_ROOT=/opt/app/static
       - BACKEND_HOSTNAME=colmena-app
