@@ -74,12 +74,19 @@ RUN apk add --no-cache \
     gettext \
     curl \
     bash \
-    tzdata
+    tzdata \
+    ca-certificates \
+    postgresql-libs \
+    libjpeg-turbo \
+    zlib
 
 # Set up application directories
 WORKDIR /opt/app
 RUN mkdir -p /opt/app/media /opt/app/static && \
     mkdir -p /var/log/supervisor
+
+# Create a dedicated non-root user for running the backend
+RUN addgroup -S colmena && adduser -S -G colmena -h /opt/app -s /sbin/nologin colmena
 
 # Copy Python environment and backend application
 COPY --from=backend-builder /usr/local /usr/local
@@ -88,6 +95,10 @@ COPY --from=backend-builder /opt/app /opt/app
 # Copy backend start script from repo root
 COPY start-backend.sh /opt/app/start-backend.sh
 RUN chmod +x /opt/app/start-backend.sh
+
+# Set proper ownership for the colmena user
+RUN chown -R colmena:colmena /opt/app && \
+    chown -R colmena:colmena /var/log/supervisor
 
 # Set up frontend (serve with nginx default root)
 COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
@@ -107,7 +118,7 @@ pidfile=/var/run/supervisord.pid
 [program:backend]
 command=/opt/app/start-backend.sh
 directory=/opt/app
-user=root
+user=colmena
 autostart=true
 autorestart=true
 stdout_logfile=/var/log/supervisor/backend.log
