@@ -1,48 +1,5 @@
-+----------+                   +------------------+
-|          | daily schedule    |                  |
-|  GitHub  +------------------>|  Check submodule |
-| Actions  |                   |  updates in OS   |
-+----+-----+                   +--------+---------+
-     |                                   |
-     | Changes found                     |
-     +-----------------------------------+
-     |                                   |
-     V                                   V
-+--------------------+        +--------------------------+
-| Build & Push imgs  |        |  No updates              |
-| (frontend/backend) |        |  -> exit                 |
-+---------+----------+         +--------------------------+
+# Release Flow Scratchpad
 
-          |
-          V
-+----------------------+
-| Push to Docker Hub   |
-+---------+------------+
-          |
-          V
-+------------------------------+
-| Trigger dispatch/workflow to |
-| deploy DRAFT to Balena Cloud |
-+---------+--------------------+
-          |
-          V
-+-----------------------------+
-| Devices w/ draft fleet pull |
-| new images, run update      |
-+---------+-------------------+
-          |
-          V
-+-------------------+
-| Human Tests Draft |
-+----+--------------+
-     | success / OK |
-     V
-+--------------------------------------------------+
-| Manual "workflow_dispatch" or git tag/release    |
-+--------------------+-----------------------------+
-                     |
-                     V
-          +--------------------------+
-          | Push official release to |
-          | Balena Production Fleet  |
-          +--------------------------+
+The maintained release diagram lives in [`../docs/30-implementation/release-flow.md`](../docs/30-implementation/release-flow.md).
+
+Use this scratchpad for alternative flow experiments or annotations during incident reviews. Update the canonical document when the flow changes.
