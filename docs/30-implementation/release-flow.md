@@ -3,6 +3,8 @@
 **Related roadmap items:** ISSUE-003, ISSUE-006  
 **Primary objective:** [3 — Reach Multi-Platform Distribution with Automation](../10-objectives.md#3-reach-multi-platform-distribution-with-automation)
 
+Operational commands and environment preparation steps live in [`../40-runbooks/docker-deployment.md`](../40-runbooks/docker-deployment.md).
+
 ```mermaid
 flowchart TD
     A[Daily GitHub Action] --> B{Submodule Updates?}
@@ -24,5 +26,3 @@ flowchart TD
 ## Rollback Plan
 - Retain previous tagged images in Docker Hub.
 - Use Balena dashboard to pin devices back to prior release if post-deploy checks fail.
-
-For raw brainstorming diagrams see [`../context/FLOWCHART.md`](../context/FLOWCHART.md).

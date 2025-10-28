@@ -89,6 +89,7 @@ docker run -d \
 ## Updates
 - Production: `docker compose pull && docker compose up -d`
 - Local: `git pull && scripts/test-compose-local.sh`
+- Balena promotion: follow the steps in [`../30-implementation/release-flow.md`](../30-implementation/release-flow.md) after draft validation.
 
 ## Troubleshooting
 - `curl http://localhost:7180` should return 200; if not, inspect `colmena-app` logs.

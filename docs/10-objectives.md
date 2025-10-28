@@ -1,8 +1,5 @@
 # Objectives
 
-**Last updated:** 2025-10-24  
-**Source inputs:** `README.md`, `context/issues-roadmap.md`
-
 ## 1. Empower Community Media with an Offline-First OS
 - Deliver a self-contained stack that runs without internet and on low-power hardware.
 - Provide recording, editing, storage, and broadcast tooling in a single deployment.

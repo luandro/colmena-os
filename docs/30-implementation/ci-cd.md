@@ -26,9 +26,9 @@
 - Human testing required before triggering production promotion.
 - Production run requires manual workflow dispatch or signed tag.
 
-## Action Items
+## Open Items
 - Ensure `test-pipeline.yml` calls the unified smoke test job before merges.
 - Update `build-and-push.yml` matrix to skip legacy frontend/backend-only builds.
-- Watch for pkg_resources deprecation warning in supervisord image; track in backlog.
+- Watch for pkg_resources deprecation warning in supervisord image.
 
-Exploratory notes remain in [`../context/github-workflows-analysis.md`](../context/github-workflows-analysis.md).
+These items are tracked in [`../backlog.md#active-initiatives`](../backlog.md#active-initiatives); update the backlog when work progresses.
