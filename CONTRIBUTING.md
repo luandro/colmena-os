@@ -26,6 +26,10 @@ cd colmena-os
 docker-compose up -d
 ```
 
+### Documentation Layout
+- Use the `docs/` directory for canonical decisions (objectives, roadmap, implementation briefs). Start at [`docs/index.md`](docs/index.md).
+- Reserve the `context/` directory for scratch notes. Promote final decisions into `docs/` and trim the scratch entry afterward.
+
 ### Testing
 ```bash
 # Run all tests
