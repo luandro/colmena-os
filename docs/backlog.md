@@ -5,7 +5,6 @@ Last updated: 2025-10-28
 ## Active Initiatives
 - Align CI workflows so `test-pipeline.yml` exercises the unified image and reports results alongside integration smoke tests.
 - Determine long-term plan for docker-compose service testing that requires submodule build context (mail, nextcloud).
-- Capture operational runbooks for CasaOS and Balena deployments building on [`docs/40-runbooks/docker-deployment.md`](docs/40-runbooks/docker-deployment.md), including fleet variables and rollback steps.
 
 ## Local Compose + OpenAPI Tasks
 - Re-enable the frontend TypeScript checker once OpenAPI type generation runs reliably inside the container build.
