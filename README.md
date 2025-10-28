@@ -40,6 +40,7 @@ ColmenaOS consists of multiple services orchestrated via Docker Compose:
 ## 📚 Documentation
 - **Project objectives & roadmap**: see [`docs/index.md`](docs/index.md) for canonical goals and planning.
 - **Implementation guides**: service-specific decisions live under [`docs/30-implementation/`](docs/30-implementation/README.md). Exploratory notes stay in `context/`.
+- **Operations**: use the runbooks in [`docs/40-runbooks/`](docs/40-runbooks/docker-deployment.md) and track upcoming work in [`docs/backlog.md`](docs/backlog.md).
 
 ## 🚀 Quick Start
 

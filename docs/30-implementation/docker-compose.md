@@ -48,6 +48,24 @@ services:
 
 Shared `x-casaos` metadata is attached to `colmena-app` so CasaOS reads compose annotations without requiring a forked file.
 
+## Default Ports
+
+| Service        | Host Port | Container Port | Notes                    |
+|----------------|-----------|----------------|--------------------------|
+| Frontend (nginx) | 7180      | 80             | Main UI                  |
+| Backend (gunicorn) | 7100   | 8000           | Direct API access        |
+| PostgreSQL     | 7432      | 5432           | External vs internal gap |
+| pgAdmin        | 7050      | 80             | Optional admin UI        |
+| Nextcloud      | 7103/7104 | 80/5001        | UI / API wrapper         |
+| Mailcrab       | 7080/7025 | 1080/1025      | Web UI / SMTP            |
+
+Adjust the host ports via environment overrides (`HTTP_PORT`, `BACKEND_PORT`, etc.) when conflicts arise. Use `scripts/cleanup-local-ports.sh` to diagnose occupied ports.
+
+## Environment Expectations
+- The unified container reads `DATABASE_URL`, `SECRET_KEY`, and super-admin credentials from `.env`.
+- Support services (postgres, nextcloud, mail) expect the standard variables exported in the sample `.env.example`.
+- CasaOS metadata attaches to `colmena-app`, so keep the `x-casaos` block in sync with CasaOS requirements.
+
 ## Acceptance
 - `docker compose up` from repo root spins up all services without manual edits.
 - Health checks report healthy within 3 retries.

@@ -7,6 +7,9 @@ This directory consolidates the working objectives, roadmap, and implementation 
 - [Objectives](./10-objectives.md) — current product and engineering outcomes, with success criteria.
 - [Roadmap](./20-roadmap.md) — phased delivery plan mapped to objectives.
 - [Implementation Notes](./30-implementation/README.md) — service-specific guidance and entry points.
+- [Runbooks](./40-runbooks/docker-deployment.md) — operational procedures for Docker deployments.
+- [Backlog](./backlog.md) — active task list and ideas awaiting prioritisation.
+- [Archive](./archive/2025-09-01-integration-success.md) — historical reports and findings.
 
 ## How to Use This Directory
 1. Start with **Objectives** to understand what success looks like.
