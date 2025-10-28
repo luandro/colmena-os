@@ -19,6 +19,7 @@ docker compose down         # stop
 - Use the helper script for build + smoke tests:
 
 ```bash
+cp .env.example .env              # populate secrets before the first run
 scripts/test-compose-local.sh         # build, start, wait for health, run checks
 TEARDOWN=1 scripts/test-compose-local.sh   # build, test, tear down
 ```
@@ -49,6 +50,8 @@ Use `scripts/cleanup-local-ports.sh` (with `FORCE=1` to kill conflicts) if ports
 2. Add a server pointing to `http://localhost:7180/api`.
 3. Log in with `SUPERADMIN_EMAIL` / `SUPERADMIN_PASSWORD` from `.env`.
 
+For scripted startup without health verification, `scripts/up-local.sh` simply builds and starts the stack; complement it with `scripts/test-compose-local.sh` for smoke tests.
+
 ## Environment Checklist
 
 ```env
@@ -78,6 +81,8 @@ docker run -d \
   -p 80:80 -p 8000:8000 \
   -e DATABASE_URL=postgresql://user:pass@host:5432/db \
   -e SECRET_KEY=your-secret-key \
+  -e SUPERADMIN_EMAIL=admin@colmena.org \
+  -e SUPERADMIN_PASSWORD=change_me \
   communityfirst/colmena-app:latest
 ```
 
@@ -88,6 +93,7 @@ docker run -d \
 ## Troubleshooting
 - `curl http://localhost:7180` should return 200; if not, inspect `colmena-app` logs.
 - `/api/` returning 404 indicates nginx config missing the proxy block; rebuild the image to refresh `/etc/nginx/http.d/default.conf`.
+- If Playwright or smoke tests fail, check artefacts under `test-results/` and `playwright-report/`.
 - For repeated port conflicts, run `scripts/cleanup-local-ports.sh` in dry run mode before forcing termination.
 
 See [`../30-implementation/docker-compose.md`](../30-implementation/docker-compose.md) for architectural decisions underlying this runbook.
