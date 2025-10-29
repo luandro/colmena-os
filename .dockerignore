@@ -128,3 +128,6 @@ Thumbs.db
 # Temporary files
 tmp/
 temp/
+
+# Exclude unreadable devops data from build context
+colmena-devops/devops/apps/nextcloud/data/**
