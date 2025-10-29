@@ -72,6 +72,8 @@ __pycache__/
 .pytest_cache/
 .coverage
 htmlcov/
+playwright-report/
+test-results/
 
 # Node.js dependencies
 node_modules/
