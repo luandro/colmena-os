@@ -8,7 +8,7 @@
 **Key docs:** [`30-implementation/unified-dockerfile.md`](./30-implementation/unified-dockerfile.md), [`30-implementation/docker-compose.md`](./30-implementation/docker-compose.md), [`backlog.md#local-compose--openapi-tasks`](./backlog.md#local-compose--openapi-tasks)
 
 - ISSUE-001: Build unified Dockerfile (supervisor-based or equivalent). _Definition of done:_ image passes local smoke tests on amd64 and publishes to the internal registry.
-- ISSUE-002: Merge devops services into the root `docker-compose.yml`. _Definition of done:_ `docker compose up` exposes app at `:8080`, backend at `:8000`, and support services.
+- ISSUE-002: Merge devops services into the root `docker-compose.yml`. _Definition of done:_ `docker compose up` exposes app at `:7180`, backend at `:7100`, and support services.
 
 ## Phase 2 — Multi-Architecture (Week 2)
 **Goal:** Enable arm64 + amd64 distribution for the unified image.  

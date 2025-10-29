@@ -9,6 +9,7 @@ This directory consolidates the working objectives, roadmap, and implementation 
 - [Roadmap](./20-roadmap.md) — phased delivery plan mapped to objectives.
 - [Implementation Notes](./30-implementation/README.md) — service-specific guidance and entry points.
 - [Runbooks](./40-runbooks/README.md) — operational procedures (Docker, CasaOS, Balena).
+  - Start with [`40-runbooks/docker-deployment.md`](./40-runbooks/docker-deployment.md) for the canonical local run/test workflow, including the `scripts/test-compose-local.sh` smoke test.
 - [Backlog](./backlog.md) — active task list and ideas awaiting prioritisation.
 - [Archive](./archive/README.md) — historical reports and findings.
 

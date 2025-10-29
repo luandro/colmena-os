@@ -121,7 +121,7 @@ services:
       - SECRET_KEY=${SECRET_KEY}
       - DEBUG=${DEBUG:-false}
       - ALLOWED_HOSTS=${ALLOWED_HOSTS:-colmena.local,localhost,*.local,*}
-      - CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS:-http://localhost:8080}
+      - CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS:-http://localhost:${HTTP_PORT:-80}}
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
       - POSTGRES_DATABASE=${POSTGRES_DB:-colmena}
       - POSTGRES_USERNAME=${POSTGRES_USER:-colmena}

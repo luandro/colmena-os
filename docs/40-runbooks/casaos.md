@@ -47,11 +47,11 @@ CasaOS stores these securely and injects them on container start.
 ## 4. Deploy and Verify
 1. Click **Install**. CasaOS pulls the published image (`communityfirst/colmena-app:latest`) and the supporting services.
 2. Watch the deployment status under **Apps → Running**. All services should report “running” within a few minutes.
-3. Validate endpoints from your browser:
-   - `http://<casaos-host>:8080` – main UI (should load login screen).
-   - `http://<casaos-host>:8080/api/` – returns HTTP 401 (expected).
+3. Validate endpoints from your browser (replace ports if you override the defaults):
+   - `http://<casaos-host>:7180` – main UI (should load login screen).
+   - `http://<casaos-host>:7180/api/` – returns HTTP 401 (expected).
    - Optional: `http://<casaos-host>:7050` (pgAdmin), `:7103` (Nextcloud), `:7080` (Mailcrab).
-4. On first login, open the UI, add the server `http://<casaos-host>:8080/api`, and sign in using the super admin credentials.
+4. On first login, open the UI, add the server `http://<casaos-host>:7180/api`, and sign in using the super admin credentials (or the port you configured via `HTTP_PORT`).
 
 ## 5. Updates
 - When a new release is published, open the app in CasaOS and click **Update** (or run `docker compose pull` from the CasaOS host shell).

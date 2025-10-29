@@ -13,8 +13,8 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8080:8080"   # Frontend
-      - "7100:8000"   # Backend
+      - "${HTTP_PORT:-7180}:80"    # Frontend (nginx)
+      - "${BACKEND_PORT:-7100}:8000"  # Backend (gunicorn)
     depends_on:
       - postgres
       - nextcloud
@@ -22,7 +22,7 @@ services:
     networks:
       - colmena_devops
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:80/"]
       interval: 30s
       timeout: 10s
       retries: 3

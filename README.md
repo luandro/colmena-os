@@ -60,18 +60,24 @@ docker compose up -d
 
 # Wait for services to start (about 2-3 minutes)
 docker compose logs -f colmena-app  # Watch startup logs
+
+# Run the bundled smoke test (recommended)
+make test-local               # wraps scripts/test-compose-local.sh
+
+For deeper troubleshooting or deployment variants, follow the runbook at
+[`docs/40-runbooks/docker-deployment.md`](docs/40-runbooks/docker-deployment.md).
 ```
 
-**🌐 Access Your Services:**
-- **Frontend (Main App)**: http://localhost:8080
-- **Backend API**: http://localhost:8000
-- **pgAdmin (Database)**: http://localhost:5050
-- **Nextcloud (Files)**: http://localhost:8003
-- **Mailcrab (Email)**: http://localhost:1080
+**🌐 Access Your Services (defaults from `.env`):**
+- **Frontend (Main App)**: http://localhost:7180
+- **Backend API**: http://localhost:7100
+- **pgAdmin (Database)**: http://localhost:7050
+- **Nextcloud (Files)**: http://localhost:7103 (UI) / http://localhost:7104 (API wrapper)
+- **Mailcrab (Email)**: http://localhost:7080 (UI) / smtp://localhost:7025
 
 **Connect to a server:**
 - **Follow documentation**: [Documentation](https://docs.colmena.media/use/add-server/)
--
+  (the UI defaults to http://localhost:7180/api when running locally)
 
 **📋 Default Login:**
 - **Email**: admin@colmena.org
@@ -110,13 +116,13 @@ balena local flash downloaded-image.img
 - **Balena CLI** (for production deployments)
 - **Git** with submodule support
 
-### Ports Used
-- **8080**: Frontend application (main interface)
-- **8000**: Backend API
-- **5432**: PostgreSQL database  
-- **5050**: pgAdmin web interface
-- **8003/8004**: Nextcloud file storage
-- **1080/1025**: Mailcrab email testing
+### Ports Used (default local mapping)
+- **7180**: Frontend application (nginx)
+- **7100**: Backend API (gunicorn)
+- **7432**: PostgreSQL database  
+- **7050**: pgAdmin web interface
+- **7103/7104**: Nextcloud UI / API wrapper
+- **7080/7025**: Mailcrab web UI / SMTP ingress
 
 ## 🔄 CI/CD Pipeline
 
@@ -167,6 +173,18 @@ cd ..
 git add frontend
 git commit -m "Update frontend submodule"
 ```
+
+### Makefile Helpers
+
+The project bundles a lightweight `Makefile` that wraps the docker-compose workflows and local scripts. Use `make help` to see the available shortcuts. Common targets:
+
+- `make up-local` – run `scripts/up-local.sh` to build and start `docker-compose.local.yml`, auto-selecting free host ports.
+- `make down-local` – stop the local stack and remove orphan containers.
+- `make test-local` – execute the smoke test (`scripts/test-compose-local.sh`) against the local stack.
+- `make clean-ports` – list processes bound to dev ports; re-run with `FORCE=1` to stop them.
+- `make prod-up` / `make prod-down` – manage the production compose file (`docker-compose.yml`).
+
+These shortcuts are optional but provide a discoverable entry point for day-to-day Docker work without memorising long compose invocations.
 
 ### Testing
 ```bash

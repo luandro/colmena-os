@@ -13,7 +13,7 @@
 1. `python -m gunicorn colmena.wsgi:application --bind 0.0.0.0:8000` (backend). Using `python -m gunicorn` avoids PATH issues when the `gunicorn` shim is not installed globally.
 2. `nginx -g 'daemon off;'` serving the compiled frontend from `/usr/share/nginx/html`.
 
-Expose ports `8080` (frontend) and `8000` (backend) for compatibility with Docker Compose and CasaOS metadata. Add log rotation if supervisors emit high-volume logs.
+Expose ports `80` (frontend) and `8000` (backend) for compatibility with Docker Compose and CasaOS metadata. Add log rotation if supervisors emit high-volume logs.
 
 ## nginx Configuration
 The image must **not** rely on the submodule’s default nginx config: that file only returns static assets and breaks `/api/` proxying. Generate a unified config inside the Dockerfile, e.g.:
@@ -48,7 +48,7 @@ Place the file in `/etc/nginx/http.d/default.conf` so Alpine nginx loads it auto
 
 ## Health Checks
 - Backend: `curl -f http://127.0.0.1:8000/api/health/`
-- Frontend: `curl -f http://127.0.0.1:8080/`
+- Frontend: `curl -f http://127.0.0.1/`
 
 ## Build Args
 - `BUILDPLATFORM` / `TARGETPLATFORM` to support Buildx multi-arch flows.
