@@ -1,0 +1,14 @@
+{
+  "name": "colmena-playwright",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "codegen": "playwright codegen"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.2",
+    "typescript": "^5.5.4"
+  }
+}

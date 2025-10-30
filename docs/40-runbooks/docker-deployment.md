@@ -63,21 +63,9 @@ For scripted startup without health verification, `scripts/up-local.sh` simply b
 
 ## Environment Checklist
 
-```env
-# Database
-POSTGRES_PASSWORD=<set-by-operator>
-POSTGRES_USER=colmena
-POSTGRES_DB=colmena
-
-# Admin
-PGADMIN_DEFAULT_PASSWORD=<set-by-operator>
-NEXTCLOUD_ADMIN_PASSWORD=<set-by-operator>
-SUPERADMIN_PASSWORD=<set-by-operator>
-
-# Secrets
-SECRET_KEY=50-char-random-string
-COLMENA_SECRET_KEY=50-char-random-string
-```
+- **Database:** `POSTGRES_PASSWORD`, `POSTGRES_USER`, `POSTGRES_DB`
+- **Admin:** `PGADMIN_DEFAULT_PASSWORD`, `NEXTCLOUD_ADMIN_PASSWORD`, `SUPERADMIN_PASSWORD`
+- **Secrets:** `SECRET_KEY`, `COLMENA_SECRET_KEY` (50+ random characters)
 
 Additional overrides:
 - `HTTP_PORT`, `BACKEND_PORT` for host mapping overrides.
@@ -90,10 +78,10 @@ docker run -d \
   --name colmena-app \
   -p 80:80 -p 8000:8000 \
   -e DATABASE_URL=postgresql://user:pass@host:5432/db \
-  -e SECRET_KEY=your-secret-key \
-  -e COLMENA_SECRET_KEY=your-secret-key \
+  -e SECRET_KEY=<secret> \
+  -e COLMENA_SECRET_KEY=<secret> \
   -e SUPERADMIN_EMAIL=admin@colmena.org \
-  -e SUPERADMIN_PASSWORD=your-superadmin-password \
+  -e SUPERADMIN_PASSWORD=<superadmin-password> \
   communityfirst/colmena-app:latest
 ```
 
