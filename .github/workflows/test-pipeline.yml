@@ -1,5 +1,9 @@
 name: Test Pipeline
 
+concurrency:
+  group: test-pipeline-${{ github.ref }}
+  cancel-in-progress: false
+
 on:
   pull_request:
     branches: [main, develop]
@@ -24,6 +28,7 @@ on:
 
 env:
   TESTBED_PREFIX: ci-test-${{ github.run_id }}
+  TESTBED_TAG: colmena-ci-${{ github.run_id }}
 
 jobs:
   workflow-validation:
@@ -54,7 +59,7 @@ jobs:
 
   integration-tests:
     runs-on: ubuntu-latest
-    if: github.event.inputs.test_type != 'local'
+    if: ${{ github.event.inputs.test_type != 'local' && secrets.DIGITALOCEAN_ACCESS_TOKEN != '' }}
     steps:
       - name: Checkout code with submodules
         uses: actions/checkout@v4
@@ -76,17 +81,25 @@ jobs:
         id: create-testbed
         run: |
           testbed_name="${TESTBED_PREFIX}-integration"
-          echo "testbed_name=$testbed_name" >> $GITHUB_OUTPUT
+          sanitized_tag=$(echo "${TESTBED_TAG}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g')
 
-          echo "🚀 Creating integration testbed: $testbed_name"
-          ./tests/0_do-testbed_cli.sh create "$testbed_name"
+          echo "testbed_name=$testbed_name" >> $GITHUB_OUTPUT
+          echo "testbed_tag=${sanitized_tag}" >> $GITHUB_OUTPUT
+
+          echo "🚀 Creating integration testbed: $testbed_name (tag: $sanitized_tag)"
+          ./tests/0_do-testbed_cli.sh create "$testbed_name" "$sanitized_tag"
 
       - name: Test Docker environment on testbed
         run: |
           testbed_name="${{ steps.create-testbed.outputs.testbed_name }}"
+          testbed_tag="${{ steps.create-testbed.outputs.testbed_tag }}"
 
           # Get testbed info
-          droplet_name=$(doctl compute droplet list --format Name --no-header | grep "$testbed_name" | head -1)
+          droplet_name=$(doctl compute droplet list --tag-name "$testbed_tag" --format Name --no-header | head -1)
+          if [[ -z "$droplet_name" ]]; then
+            echo "❌ Unable to locate droplet for tag $testbed_tag"
+            exit 1
+          fi
           droplet_ip=$(doctl compute droplet get "$droplet_name" --format PublicIPv4 --no-header)
 
           echo "🐳 Testing Docker environment on $droplet_ip..."
@@ -119,6 +132,7 @@ jobs:
       - name: Test ColmenaOS deployment
         run: |
           testbed_name="${{ steps.create-testbed.outputs.testbed_name }}"
+          testbed_tag="${{ steps.create-testbed.outputs.testbed_tag }}"
 
           echo "🚀 Testing ColmenaOS deployment..."
           ./tests/0_do-testbed_cli.sh deploy "$testbed_name"
@@ -126,7 +140,12 @@ jobs:
       - name: Run deployment health checks
         run: |
           testbed_name="${{ steps.create-testbed.outputs.testbed_name }}"
-          droplet_name=$(doctl compute droplet list --format Name --no-header | grep "$testbed_name" | head -1)
+          testbed_tag="${{ steps.create-testbed.outputs.testbed_tag }}"
+          droplet_name=$(doctl compute droplet list --tag-name "$testbed_tag" --format Name --no-header | head -1)
+          if [[ -z "$droplet_name" ]]; then
+            echo "❌ Unable to locate droplet for tag $testbed_tag"
+            exit 1
+          fi
           droplet_ip=$(doctl compute droplet get "$droplet_name" --format PublicIPv4 --no-header)
 
           echo "🔍 Running health checks on $droplet_ip..."
@@ -163,20 +182,44 @@ jobs:
         if: always() && !inputs.skip_cleanup
         run: |
           testbed_name="${{ steps.create-testbed.outputs.testbed_name }}"
+          testbed_tag="${{ steps.create-testbed.outputs.testbed_tag }}"
           echo "🧹 Cleaning up testbed: $testbed_name"
-          ./tests/0_do-testbed_cli.sh destroy "$testbed_name" || echo "Cleanup warning: testbed may still exist"
+          if ! ./tests/0_do-testbed_cli.sh destroy "$testbed_name" "$testbed_tag"; then
+            echo "Cleanup warning: testbed may still exist"
+          fi
+
+      - name: Verify droplet cleanup
+        if: always() && !inputs.skip_cleanup
+        run: |
+          testbed_tag="${{ steps.create-testbed.outputs.testbed_tag }}"
+          echo "🔁 Verifying no droplets remain with tag $testbed_tag"
+          remaining=$(doctl compute droplet list --tag-name "$testbed_tag" --format Name --no-header || true)
+          if [[ -n "$remaining" ]]; then
+            echo "❌ Droplets still present:"
+            echo "$remaining"
+            exit 1
+          fi
+          echo "✅ No droplets remain with tag $testbed_tag"
 
       - name: Preserve testbed for debugging
         if: inputs.skip_cleanup
         run: |
           testbed_name="${{ steps.create-testbed.outputs.testbed_name }}"
-          droplet_ip=$(doctl compute droplet get "$(doctl compute droplet list --format Name --no-header | grep "$testbed_name" | head -1)" --format PublicIPv4 --no-header)
+          testbed_tag="${{ steps.create-testbed.outputs.testbed_tag }}"
+          droplet_name=$(doctl compute droplet list --tag-name "$testbed_tag" --format Name --no-header | head -1)
+          if [[ -z "$droplet_name" ]]; then
+            echo "⚠️ Unable to determine droplet for tag $testbed_tag"
+            exit 0
+          fi
+          droplet_ip=$(doctl compute droplet get "$droplet_name" --format PublicIPv4 --no-header)
 
           echo "🐛 Testbed preserved for debugging:"
           echo "  Name: $testbed_name"
+          echo "  Tag: $testbed_tag"
+          echo "  Droplet: $droplet_name"
           echo "  IP: $droplet_ip"
           echo "  SSH: ssh root@$droplet_ip"
-          echo "  Cleanup: ./tests/0_do-testbed_cli.sh destroy $testbed_name"
+          echo "  Cleanup: ./tests/0_do-testbed_cli.sh destroy $testbed_name $testbed_tag"
 
   docker-basic-tests:
     runs-on: ubuntu-latest
@@ -198,6 +241,7 @@ jobs:
           cat > .env << EOF
           POSTGRES_PASSWORD=test_password_123
           SECRET_KEY=test_secret_key_for_testing_purposes_minimum_fifty_chars
+          COLMENA_SECRET_KEY=test_secret_key_for_testing_purposes_minimum_fifty_chars
           NEXTCLOUD_ADMIN_PASSWORD=test_nextcloud_pass
           SUPERADMIN_PASSWORD=test_superadmin_pass
           PGADMIN_DEFAULT_PASSWORD=test_pgadmin_pass
@@ -267,7 +311,8 @@ jobs:
           fi
 
       - name: Comment on PR
-        if: github.event_name == 'pull_request'
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false }}
+        continue-on-error: true
         uses: actions/github-script@v7
         with:
           script: |
