@@ -16,8 +16,9 @@ on:
         type: string
 
 env:
-  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
   REGISTRY: docker.io
+  IMAGE_NAME: colmena-app
+  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || 'communityfirst' }}
 
 jobs:
   prepare:
@@ -87,7 +88,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-unified
+          images: ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -103,8 +104,8 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           load: ${{ github.event_name == 'pull_request' }}
           tags: |
-            ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-unified:latest${{ needs.prepare.outputs.tag_suffix }}
-            ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/colmena-unified:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest${{ needs.prepare.outputs.tag_suffix }}
+            ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
           labels: |
             org.opencontainers.image.title=ColmenaOS Unified
             org.opencontainers.image.description=ColmenaOS unified frontend + backend service

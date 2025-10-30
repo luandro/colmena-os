@@ -58,8 +58,11 @@ CasaOS stores these securely and injects them on container start.
 - For manual upgrades, replace the `image` tag in `docker-compose.yml` or repush the updated compose file, then restart the app from CasaOS.
 
 ## 6. Backups and Volumes
-CasaOS maps named volumes declared in the compose file:
-- `pg_data`, `nextcloud_data`, `pgadmin_data`, `app_data`, `media_uploads`.
+CasaOS maps the named volumes declared in the compose file:
+- `pg_data`, `pgadmin_data` — database data and pgAdmin configuration.
+- `nextcloud_data` — Nextcloud application data.
+- `static_data`, `media_data` — Django static and media assets.
+- Optional: `nextcloud_apps` if you enable extra Nextcloud apps during runtime.
 Schedule host-level backups of these volumes to preserve database and media content.
 
 ## 7. Rollback

@@ -8,7 +8,6 @@ Last updated: 2025-10-28
 
 ## Local Compose + OpenAPI Tasks
 - Re-enable the frontend TypeScript checker once OpenAPI type generation runs reliably inside the container build.
-- Generate `schema-runtime.json` and `Definitions.d.ts` during the frontend build directly from the backend schema.
 - Add a CI job that runs `scripts/test-compose-local.sh` and uploads the resulting report when failures occur.
 - Surface the backend OpenAPI version in the UI (e.g., via `/api/schema/version`).
 
@@ -18,8 +17,6 @@ Last updated: 2025-10-28
 - Improve unauthenticated error messages (401/403) to guide users toward login or server selection.
 
 ## Developer Ergonomics
-- Integrate `scripts/cleanup-local-ports.sh` as a pre-flight step in `scripts/test-compose-local.sh` (dry run + optional `FORCE=1`).
-- Add Makefile shortcuts: `up-local`, `test-local`, `down-local`, `clean-ports`.
 - Explore `docker compose watch` for faster inner-loop feedback.
 - Extend runbooks with “quick diagnose” commands (logs, `docker compose ps`, `docker inspect`) for on-call use.
 

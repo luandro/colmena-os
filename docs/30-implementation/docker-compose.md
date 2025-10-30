@@ -8,7 +8,7 @@
 ```yaml
 services:
   colmena-app:
-    image: colmena/unified:latest
+    image: communityfirst/colmena-app:latest
     build:
       context: .
       dockerfile: Dockerfile

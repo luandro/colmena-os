@@ -15,7 +15,7 @@ echo "✅ Docker is running"
 
 # Build the unified image
 echo "🏗️  Building unified Docker image..."
-if docker build -t colmena-unified-test .; then
+if docker build -t colmena-app-test .; then
     echo "✅ Unified image built successfully"
 else
     echo "❌ Failed to build unified image"
@@ -24,14 +24,14 @@ fi
 
 # Test that the image has both frontend and backend
 echo "🔍 Inspecting built image..."
-if docker run --rm colmena-unified-test ls -la /app/backend/ 2>/dev/null | grep -q "manage.py"; then
+if docker run --rm colmena-app-test ls -la /app/backend/ 2>/dev/null | grep -q "manage.py"; then
     echo "✅ Backend files present in image"
 else
     echo "❌ Backend files missing from image"
     exit 1
 fi
 
-if docker run --rm colmena-unified-test ls -la /app/frontend/dist/ 2>/dev/null | grep -q "index.html"; then
+if docker run --rm colmena-app-test ls -la /app/frontend/dist/ 2>/dev/null | grep -q "index.html"; then
     echo "✅ Frontend build files present in image"
 else
     echo "❌ Frontend build files missing from image"
@@ -39,7 +39,7 @@ else
 fi
 
 # Check that supervisor is installed
-if docker run --rm colmena-unified-test which supervisord > /dev/null 2>&1; then
+if docker run --rm colmena-app-test which supervisord > /dev/null 2>&1; then
     echo "✅ Supervisor is installed"
 else
     echo "❌ Supervisor not found in image"
@@ -47,7 +47,7 @@ else
 fi
 
 # Check that nginx is installed
-if docker run --rm colmena-unified-test which nginx > /dev/null 2>&1; then
+if docker run --rm colmena-app-test which nginx > /dev/null 2>&1; then
     echo "✅ Nginx is installed"
 else
     echo "❌ Nginx not found in image"

@@ -55,10 +55,10 @@ services:
   nextcloud:
     image: colmena_nextcloud
     build:
-      context: colmena-devops/devops/apps/nextcloud/
-      dockerfile: builder/Dockerfile
+      context: .
+      dockerfile: docker/nextcloud-builder.Dockerfile
       args:
-        BUILD_CONTEXT: builder
+        BUILD_CONTEXT: colmena-devops/devops/apps/nextcloud/builder
         NEXTCLOUD_VERSION: ${NEXTCLOUD_VERSION:-28.0.3}
         NEXTCLOUD_API_WRAPPER_PORT: ${NEXTCLOUD_API_WRAPPER_PORT:-5001}
         APACHE_APP_PATH: ${APACHE_APP_PATH:-/var/www/nc_api_wrapper}

@@ -26,19 +26,19 @@ RUN if [ -f requirements/prod.txt ]; then \
     else \
       echo "No backend requirements found, skipping install"; \
     fi
-RUN touch /tmp/schema.json && \
-    if [ -f manage.py ]; then \
-      echo "Generating backend OpenAPI schema (JSON) via manage.py spectacular..." && \
-      POSTGRES_DATABASE=colmena \
-      POSTGRES_USERNAME=colmena \
-      POSTGRES_PASSWORD=dummy \
-      POSTGRES_HOSTNAME=localhost \
-      POSTGRES_PORT=5432 \
-      python manage.py spectacular --color --file /tmp/schema.json --format openapi-json || \
-      (echo "OpenAPI generation failed; keeping empty schema" && true); \
-    else \
-      echo "No manage.py in backend; skipping schema generation"; \
+RUN if [ -f apps/nextcloud/openapi/schema.json ]; then \
+      python -m openapi_python_generator apps/nextcloud/openapi/schema.json apps/nextcloud/openapi/client; \
     fi
+ENV DJANGO_SETTINGS_MODULE=colmena.settings.test \
+    STAGE=test \
+    COLMENA_SECRET_KEY="colmena-build-secret"
+RUN if [ -f manage.py ]; then \
+      echo "Generating backend OpenAPI schema (JSON) via manage.py spectacular..." && \
+      python manage.py spectacular --file /tmp/schema.json --format openapi-json; \
+    else \
+      echo "No manage.py in backend; skipping schema generation" && exit 1; \
+    fi
+RUN test -s /tmp/schema.json
 
 # ------------------------------
 # Stage 1: Frontend builder
@@ -48,26 +48,9 @@ WORKDIR /app/frontend
 # Always copy the directory (may be empty when submodule isn't checked out)
 COPY frontend/ ./
 # Copy generated backend schema into frontend (if available)
-RUN mkdir -p src/api
+RUN mkdir -p src/api src/api/utilities
 COPY --from=backend-schema /tmp/schema.json /app/frontend/src/api/schema.json
-# Ensure OpenAPI runtime schema exists to allow build without network
-RUN mkdir -p src/api/utilities && \
-    if [ ! -s src/api/utilities/schema-runtime.json ]; then \
-      echo '{"openapi":"3.0.0","info":{"title":"Colmena API","version":"0.0.0"},"paths":{}}' > src/api/utilities/schema-runtime.json; \
-    fi
-
-# Provide minimal type/runtime stubs for generated OpenAPI types to allow build without generator
-RUN cat > src/api/utilities/Definitions.d.ts <<'EOF'
-export type Client = any;
-export type Paths = any;
-export namespace Components { export type Schemas = any; }
-EOF
-RUN cat > src/api/utilities/Definitions.js <<'EOF'
-export const Client = {};
-export const Paths = {};
-export const Components = { Schemas: {} };
-export default {};
-EOF
+RUN test -s src/api/schema.json
 
 # Disable Vite type-checker plugin to allow production build in container
 RUN if [ -f vite.config.ts ]; then \
@@ -75,16 +58,15 @@ RUN if [ -f vite.config.ts ]; then \
       sed -i '/checker({/,/}),/d' vite.config.ts ; \
     fi
 
-# Build if package.json exists; otherwise create a minimal placeholder dist
 RUN if [ -f package.json ]; then \
       npm ci --prefer-offline --no-audit --no-fund --ignore-scripts && \
-      if [ -f src/api/schema.json ]; then \
-        echo "Running frontend OpenAPI tasks (optimize + typegen)"; \
-        (npm run openapi-optimize && npm run openapi-typegen) || echo 'OpenAPI tasks failed; keeping stubs'; \
-      fi && \
-      (npm run build || npx vite build --mode production || (echo 'Build failed, falling back to placeholder index.html' >&2; mkdir -p dist && echo '<!doctype html><html><body><h1>ColmenaOS</h1></body></html>' > dist/index.html)); \
+      echo "Running frontend OpenAPI tasks (optimize + typegen)" && \
+      npm run openapi-optimize && \
+      npm run openapi-typegen && \
+      test -s src/api/utilities/schema-runtime.json && \
+      npm run build; \
     else \
-      mkdir -p dist && echo '<!doctype html><html><body><h1>ColmenaOS</h1></body></html>' > dist/index.html; \
+      echo "package.json missing; cannot build frontend" && exit 1; \
     fi
 
 # ------------------------------
@@ -119,21 +101,6 @@ RUN if [ -f requirements/prod.txt ]; then \
       echo "No backend requirements found, skipping install"; \
     fi
 
-# Generate OpenAPI schema (JSON) from Django using drf-spectacular
-RUN touch /tmp/schema.json && \
-    if [ -f manage.py ]; then \
-      echo "Generating backend OpenAPI schema (JSON) via manage.py spectacular..." && \
-      POSTGRES_DATABASE=colmena \
-      POSTGRES_USERNAME=colmena \
-      POSTGRES_PASSWORD=dummy \
-      POSTGRES_HOSTNAME=localhost \
-      POSTGRES_PORT=5432 \
-      python manage.py spectacular --color --file /tmp/schema.json --format openapi-json || \
-      (echo "OpenAPI generation failed; will fallback to frontend stubs" && true); \
-    else \
-      echo "No manage.py in backend; skipping schema generation"; \
-    fi
-
 # Generate OpenAPI client if schema and generator are available (don't fail build if missing)
 RUN if [ -f apps/nextcloud/openapi/schema.json ]; then \
       (python -m openapi_python_generator apps/nextcloud/openapi/schema.json apps/nextcloud/openapi/client || echo "OpenAPI generator not available, skipping"); \
@@ -147,32 +114,6 @@ RUN if [ ! -f manage.py ]; then \
       echo 'print("Placeholder manage.py - backend sources not present in build context")' >> manage.py && \
       chmod +x manage.py; \
     fi
-
-# ------------------------------
-# Stage 2: Frontend builder (with backend schema)
-# ------------------------------
-FROM node:20-alpine AS frontend-builder-schema
-WORKDIR /app/frontend
-COPY frontend/ ./
-RUN mkdir -p src/api && cp /dev/null src/api/schema.json || true
-COPY --from=backend-builder /tmp/schema.json ./src/api/schema.json
-
-# Disable Vite type-checker plugin to allow production build in container
-RUN if [ -f vite.config.ts ]; then \
-      sed -i "s/^import checker from 'vite-plugin-checker';/\/\/ import checker from 'vite-plugin-checker';/" vite.config.ts && \
-      sed -i '/checker({/,/}),/d' vite.config.ts ; \
-    fi
-
-# Provide minimal runtime JS stub for Definitions in case typegen outputs only .d.ts
-RUN mkdir -p src/api/utilities && \
-    [ -f src/api/utilities/Definitions.js ] || \
-    printf "export const Client = {};\nexport const Paths = {};\nexport const Components = { Schemas: {} };\nexport default {};\n" > src/api/utilities/Definitions.js
-
-RUN npm ci --prefer-offline --no-audit --no-fund --ignore-scripts && \
-    if [ -f src/api/schema.json ] && [ -s src/api/schema.json ]; then \
-      cp src/api/schema.json src/api/utilities/schema-runtime.json; \
-    fi && \
-    (npm run build || npx vite build --mode production)
 
 # ------------------------------
 # Stage 3: Final unified image
@@ -204,7 +145,7 @@ RUN addgroup -S colmena && adduser -S -G colmena -h /opt/app -s /sbin/nologin co
 COPY --from=backend-builder /usr/local /usr/local
 COPY --from=backend-builder /opt/app /opt/app
 # Keep generated OpenAPI schema for reference/debugging
-COPY --from=backend-builder /tmp/schema.json /opt/app/openapi.json
+COPY --from=backend-schema /tmp/schema.json /opt/app/openapi.json
 
 # Copy backend start script from repo root
 COPY start-backend.sh /opt/app/start-backend.sh

@@ -12,7 +12,7 @@
 ## Build Strategy
 1. Determine target platforms and version from Git metadata.
 2. Build the unified container image with `--platform linux/amd64,linux/arm64`.
-3. Push tagged multi-arch manifests to Docker Hub (`colmena/unified`).
+3. Push tagged multi-arch manifests to Docker Hub (`communityfirst/colmena-app`).
 4. Notify downstream workflows when a new image is available.
 
 ## Testing & Quality Gates
