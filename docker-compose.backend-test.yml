@@ -12,7 +12,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-colmena}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - pg_data_test:/var/lib/postgresql/data
     networks:
@@ -38,6 +38,7 @@ services:
       - STAGE=prod
       - DATABASE_URL=postgresql://${POSTGRES_USER:-colmena}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-colmena}
       - SECRET_KEY=${SECRET_KEY}
+      - COLMENA_SECRET_KEY=${COLMENA_SECRET_KEY}
       - DEBUG=${DEBUG:-false}
       - ALLOWED_HOSTS=${ALLOWED_HOSTS:-colmena.local,localhost,*.local,*}
       - CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS:-http://localhost:8080}

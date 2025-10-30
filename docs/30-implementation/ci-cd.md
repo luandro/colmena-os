@@ -5,7 +5,7 @@
 
 ## Workflow Overview
 - `test-pipeline.yml` — validates workflows locally, runs integration deploy tests, and reports results to pull requests.
-- `build-and-push.yml` — builds the unified application image for amd64 and arm64 using Docker Buildx and pushes manifests to the registry.
+- `build-unified.yml` — runs compose smoke + Playwright tests against a locally built image, then pushes the unified amd64/arm64 manifest to Docker Hub.
 - `deploy-balena-production.yml` — promotes vetted images to the Balena production fleet after manual approval.
 - `claude.yml` — assists PR reviews; dependency only, no release impact.
 
@@ -17,8 +17,8 @@
 
 ## Testing & Quality Gates
 - Local workflow syntax validation via `act`.
-- Integration smoke tests using `docker compose -f docker-compose.local.yml`.
-- Unified container smoke test `./tests/test-unified.sh` (ensure workflow includes this step).
+- `scripts/compose-smoke.sh` verifies container health and key HTTP endpoints before any push.
+- Playwright smoke suite (`tests/playwright`) exercises server onboarding, authentication, and core navigation against the running stack.
 - Security scans inherit from existing build jobs; keep Trivy/Grype in place when updating.
 
 ## Release Promotion
@@ -27,8 +27,7 @@
 - Production run requires manual workflow dispatch or signed tag.
 
 ## Open Items
-- Ensure `test-pipeline.yml` calls the unified smoke test job before merges.
-- Update `build-and-push.yml` matrix to skip legacy frontend/backend-only builds.
-- Watch for pkg_resources deprecation warning in supervisord image.
+- Wire Playwright smoke artifacts into release notes for easier debugging when failures arise.
+- Watch for `pkg_resources` deprecation warning in the supervisord image.
 
 These items are tracked in [`../backlog.md#active-initiatives`](../backlog.md#active-initiatives); update the backlog when work progresses.

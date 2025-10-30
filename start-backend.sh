@@ -1,7 +1,17 @@
 #!/bin/sh
 
+set -eu
+
 SETTINGS=colmena.settings.prod
 BIN=python
+STATIC_ROOT=${STATIC_ROOT:-/opt/app/static}
+MEDIA_ROOT=${MEDIA_ROOT:-/opt/app/media}
+LOG_ROOT=${LOG_ROOT:-/opt/app/logs}
+
+if [ "$(id -u)" -eq 0 ]; then
+    mkdir -p "$STATIC_ROOT" "$MEDIA_ROOT" "$LOG_ROOT"
+    chown colmena:colmena "$STATIC_ROOT" "$MEDIA_ROOT" "$LOG_ROOT"
+fi
 
 echo "Starting ColmenaOS Backend..."
 echo "Using settings=$SETTINGS"
@@ -10,34 +20,57 @@ echo "Using settings=$SETTINGS"
 echo "======== Collecting static files ========"
 $BIN ./manage.py collectstatic --noinput --settings=$SETTINGS
 
+if [ "$(id -u)" -eq 0 ]; then
+    chown -R colmena:colmena "$STATIC_ROOT"
+fi
+
 echo "======== Compiling translations ========"  
 $BIN ./manage.py compilemessages -l en -l es -i venv
 
 # Setup database (handle errors gracefully)
 echo "======== Database Setup ========"
-$BIN ./bin/postgres.py CREATE || echo "Database already exists, continuing..."
-$BIN manage.py makemigrations --settings=$SETTINGS || echo "No new migrations needed"
-$BIN manage.py migrate --settings=$SETTINGS || echo "Migration issues, continuing..."
+if ! $BIN ./bin/postgres.py CREATE; then
+    echo "Database already exists, continuing..."
+fi
+
+$BIN manage.py makemigrations --settings=$SETTINGS --check --dry-run
+$BIN manage.py migrate --settings=$SETTINGS
 
 # Setup seeds (handle errors gracefully)
 echo "======== Installing seeds ========"
 if [ -n "$BACKEND_HOSTNAME" ] && [ -n "$FRONTEND_HOSTNAME" ]; then
-    $BIN manage.py load_sites_with_hostname $BACKEND_HOSTNAME $FRONTEND_HOSTNAME --settings=$SETTINGS || echo "Sites already configured"
+    if ! $BIN manage.py load_sites_with_hostname $BACKEND_HOSTNAME $FRONTEND_HOSTNAME --settings=$SETTINGS; then
+        echo "Sites already configured"
+    fi
 fi
 
-$BIN manage.py loaddata apps/accounts/seeds/02-groups.json --settings=$SETTINGS || echo "Groups already loaded"
-$BIN manage.py setup_group_permissions --settings=$SETTINGS || echo "Permissions already configured"
-$BIN manage.py loaddata apps/accounts/seeds/04-languages.json --settings=$SETTINGS || echo "Languages already loaded" 
-$BIN manage.py loaddata apps/accounts/seeds/05-regions.json --settings=$SETTINGS || echo "Regions already loaded"
+if ! $BIN manage.py loaddata apps/accounts/seeds/02-groups.json --settings=$SETTINGS; then
+    echo "Groups already loaded"
+fi
+if ! $BIN manage.py setup_group_permissions --settings=$SETTINGS; then
+    echo "Permissions already configured"
+fi
+if ! $BIN manage.py loaddata apps/accounts/seeds/04-languages.json --settings=$SETTINGS; then
+    echo "Languages already loaded"
+fi
+if ! $BIN manage.py loaddata apps/accounts/seeds/05-regions.json --settings=$SETTINGS; then
+    echo "Regions already loaded"
+fi
+
+if [ "$(id -u)" -eq 0 ]; then
+    chown -R colmena:colmena "$MEDIA_ROOT" "$LOG_ROOT"
+fi
 
 # Create superadmin (handle duplicate gracefully)
 echo "======== Create Superadmin ========"
 if [ -n "$SUPERADMIN_EMAIL" ] && [ -n "$SUPERADMIN_PASSWORD" ] && [ -n "$NEXTCLOUD_ADMIN_USER" ] && [ -n "$NEXTCLOUD_ADMIN_PASSWORD" ]; then
-    $BIN manage.py create_superadmin \
+    if ! $BIN manage.py create_superadmin \
         $SUPERADMIN_EMAIL \
         $SUPERADMIN_PASSWORD \
         $NEXTCLOUD_ADMIN_USER \
-        $NEXTCLOUD_ADMIN_PASSWORD || echo "Superadmin already exists, continuing..."
+        $NEXTCLOUD_ADMIN_PASSWORD; then
+        echo "Superadmin already exists, continuing..."
+    fi
 fi
 
 echo "======== Starting Django Server ========"
@@ -46,4 +79,10 @@ WORKER_TIMEOUT=${GUNICORN_WORKER_TIMEOUT:-300}
 WORKERS=${GUNICORN_WORKERS:-2}
 PORT=${PORT:-8000}
 
-exec python -m gunicorn --timeout $WORKER_TIMEOUT --workers $WORKERS colmena.wsgi:application --bind 0.0.0.0:$PORT
+CMD="$BIN -m gunicorn --timeout $WORKER_TIMEOUT --workers $WORKERS colmena.wsgi:application --bind 0.0.0.0:$PORT"
+
+if [ "$(id -u)" -eq 0 ]; then
+    exec su colmena -s /bin/sh -c "cd /opt/app && exec $CMD"
+else
+    exec $CMD
+fi

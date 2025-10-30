@@ -36,7 +36,7 @@ Set the following variables via the CasaOS UI (match your `.env` file):
 
 | Variable | Purpose |
 |----------|---------|
-| `SECRET_KEY` | Django cryptographic secret (minimum 50 chars). |
+| `SECRET_KEY` / `COLMENA_SECRET_KEY` | Django cryptographic secret (minimum 50 chars). |
 | `SUPERADMIN_EMAIL` / `SUPERADMIN_PASSWORD` | First login credentials. |
 | `POSTGRES_PASSWORD` | Database password (also used by Nextcloud). |
 | `NEXTCLOUD_ADMIN_PASSWORD` | Nextcloud administrator password. |

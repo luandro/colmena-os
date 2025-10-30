@@ -142,7 +142,7 @@ test_all_workflows() {
     
     # Test build and push workflow
     log_info "Testing build and push workflow..."
-    if test_workflow "build-and-push" "prepare" "push"; then
+    if test_workflow "build-unified" "prepare" "push"; then
         log_success "Build and push test passed"
     else
         log_error "Build and push test failed"
@@ -176,7 +176,7 @@ test_specific_service() {
     export INPUT_SERVICES="$service"
     export INPUT_PLATFORMS="linux/amd64"  # Test single arch for speed
     
-    if test_workflow "build-and-push" "build" "workflow_dispatch"; then
+    if test_workflow "build-unified" "build" "workflow_dispatch"; then
         log_success "Service $service test passed"
         return 0
     else
@@ -219,7 +219,7 @@ Examples:
     $0 check                           # Check prerequisites
     $0 test-all                        # Test all workflows
     $0 test-service frontend           # Test frontend service only
-    $0 test-workflow build-and-push    # Test specific workflow
+    $0 test-workflow build-unified    # Test specific workflow
     $0 clean                           # Clean up after testing
 
 Environment Variables:

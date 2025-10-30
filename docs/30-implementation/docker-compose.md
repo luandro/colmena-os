@@ -62,7 +62,7 @@ Shared `x-casaos` metadata is attached to `colmena-app` so CasaOS reads compose 
 Adjust the host ports via environment overrides (`HTTP_PORT`, `BACKEND_PORT`, etc.) when conflicts arise. Use `scripts/cleanup-local-ports.sh` to diagnose occupied ports.
 
 ## Environment Expectations
-- The unified container reads `DATABASE_URL`, `SECRET_KEY`, and super-admin credentials from `.env`.
+- The unified container reads `DATABASE_URL`, `COLMENA_SECRET_KEY` (alias `SECRET_KEY`), and super-admin credentials from `.env`.
 - Support services (postgres, nextcloud, mail) expect the standard variables exported in the sample `.env.example`.
 - CasaOS metadata attaches to `colmena-app`, so keep the `x-casaos` block in sync with CasaOS requirements.
 

@@ -203,7 +203,6 @@ pidfile=/var/run/supervisord.pid
 [program:backend]
 command=/opt/app/start-backend.sh
 directory=/opt/app
-user=colmena
 autostart=true
 autorestart=true
 stdout_logfile=/var/log/supervisor/backend.log

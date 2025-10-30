@@ -95,7 +95,7 @@ run_local_tests() {
     fi
     
     log_info "Testing build preparation..."
-    if ACT_DRY_RUN=true "$LOCAL_TEST_SCRIPT" test-workflow build-and-push; then
+    if ACT_DRY_RUN=true "$LOCAL_TEST_SCRIPT" test-workflow build-unified; then
         log_success "Build workflow test passed"
     else
         log_error "Build workflow test failed"

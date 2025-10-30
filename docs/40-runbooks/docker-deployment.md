@@ -32,6 +32,15 @@ docker compose -f docker-compose.local.yml --project-name colmena ps
 docker compose -f docker-compose.local.yml --project-name colmena down --remove-orphans
 ```
 
+### Unified Stack Smoke Test (`docker-compose.yml`)
+- Use `scripts/compose-smoke.sh` to verify health and endpoint reachability without manual curl commands.
+
+```bash
+ENV_EXPORT_PATH=smoke.env scripts/compose-smoke.sh   # starts stack, waits for health, records ports
+source smoke.env                                     # exposes PLAYWRIGHT_* hints for e2e tooling
+TEARDOWN=0 scripts/compose-smoke.sh                  # spin up without tearing down (pair with Playwright)
+```
+
 ## Port Map
 
 | Service        | Host Port | Notes                          |
@@ -47,7 +56,7 @@ Use `scripts/cleanup-local-ports.sh` (with `FORCE=1` to kill conflicts) if ports
 
 ## First-Run UX
 1. Open `http://localhost:7180`.
-2. Add a server pointing to `http://localhost:7180/api`.
+2. Add a server pointing to `http://localhost:7180/api` (or the backend host port exported by `scripts/compose-smoke.sh`).
 3. Log in with `SUPERADMIN_EMAIL` / `SUPERADMIN_PASSWORD` from `.env`.
 
 For scripted startup without health verification, `scripts/up-local.sh` simply builds and starts the stack; complement it with `scripts/test-compose-local.sh` for smoke tests.
@@ -56,17 +65,18 @@ For scripted startup without health verification, `scripts/up-local.sh` simply b
 
 ```env
 # Database
-POSTGRES_PASSWORD=...
+POSTGRES_PASSWORD=<set-by-operator>
 POSTGRES_USER=colmena
 POSTGRES_DB=colmena
 
 # Admin
-PGADMIN_DEFAULT_PASSWORD=...
-NEXTCLOUD_ADMIN_PASSWORD=...
-SUPERADMIN_PASSWORD=...
+PGADMIN_DEFAULT_PASSWORD=<set-by-operator>
+NEXTCLOUD_ADMIN_PASSWORD=<set-by-operator>
+SUPERADMIN_PASSWORD=<set-by-operator>
 
 # Secrets
 SECRET_KEY=50-char-random-string
+COLMENA_SECRET_KEY=50-char-random-string
 ```
 
 Additional overrides:
@@ -81,8 +91,9 @@ docker run -d \
   -p 80:80 -p 8000:8000 \
   -e DATABASE_URL=postgresql://user:pass@host:5432/db \
   -e SECRET_KEY=your-secret-key \
+  -e COLMENA_SECRET_KEY=your-secret-key \
   -e SUPERADMIN_EMAIL=admin@colmena.org \
-  -e SUPERADMIN_PASSWORD=change_me \
+  -e SUPERADMIN_PASSWORD=your-superadmin-password \
   communityfirst/colmena-app:latest
 ```
 
@@ -94,7 +105,7 @@ docker run -d \
 ## Troubleshooting
 - `curl http://localhost:7180` should return 200; if not, inspect `colmena-app` logs.
 - `/api/` returning 404 indicates nginx config missing the proxy block; rebuild the image to refresh `/etc/nginx/http.d/default.conf`.
-- If Playwright or smoke tests fail, check artefacts under `test-results/` and `playwright-report/`.
+- If `scripts/compose-smoke.sh` fails, review `smoke-report.md` for captured logs; Playwright artefacts land under `test-results/` and `playwright-report/`.
 - For repeated port conflicts, run `scripts/cleanup-local-ports.sh` in dry run mode before forcing termination.
 
 See [`../30-implementation/docker-compose.md`](../30-implementation/docker-compose.md) for architectural decisions underlying this runbook.

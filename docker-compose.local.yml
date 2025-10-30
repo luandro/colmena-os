@@ -15,7 +15,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-colmena}
     ports:
-      - "${POSTGRES_PORT:-7432}:5432"
+      - "${POSTGRES_HOST_PORT:-7432}:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
       - ./docker/postgres-init:/docker-entrypoint-initdb.d
@@ -69,7 +69,7 @@ services:
       - nextcloud_data:/var/www/html
     ports:
       - "${NEXTCLOUD_HTTP_PORT:-7103}:80"
-      - "${NEXTCLOUD_API_WRAPPER_PORT:-7104}:5001"
+      - "${NEXTCLOUD_API_HOST_PORT:-7104}:5001"
     environment:
       - SQLITE_DATABASE=nextcloud
       - NEXTCLOUD_TRUSTED_DOMAINS=${NEXTCLOUD_TRUSTED_DOMAINS:-colmena.local,localhost,*.local,192.168.*.*,10.*.*.*}
@@ -117,6 +117,7 @@ services:
       - STAGE=dev
       - DATABASE_URL=postgresql://${POSTGRES_USER:-colmena}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-colmena}
       - SECRET_KEY=${SECRET_KEY}
+      - COLMENA_SECRET_KEY=${COLMENA_SECRET_KEY}
       - DEBUG=${DEBUG:-true}
       - ALLOWED_HOSTS=${ALLOWED_HOSTS:-colmena.local,localhost,*.local,*}
       - CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS:-http://localhost:${HTTP_PORT:-7180}}
@@ -130,6 +131,7 @@ services:
       - EMAIL_PORT=1025
       - EMAIL_USE_TLS=false
       - NEXTCLOUD_URL=http://nextcloud
+      - NEXTCLOUD_API_URL=${NEXTCLOUD_API_URL:-http://nextcloud}
       - NEXTCLOUD_API_WRAPPER_URL=http://nextcloud:5001
       - NEXTCLOUD_USERNAME=${NEXTCLOUD_ADMIN_USER:-admin}
       - NEXTCLOUD_PASSWORD=${NEXTCLOUD_ADMIN_PASSWORD}

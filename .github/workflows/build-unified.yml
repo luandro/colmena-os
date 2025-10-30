@@ -53,8 +53,108 @@ jobs:
             echo "platforms=linux/amd64,linux/arm64" >> $GITHUB_OUTPUT
           fi
 
-  build-unified:
+  stack-tests:
     needs: prepare
+    runs-on: ubuntu-latest
+    env:
+      COLMENA_APP_IMAGE: colmena-app:test
+      POSTGRES_PASSWORD: colmena_ci_postgres
+      PGADMIN_DEFAULT_PASSWORD: colmena_ci_pgadmin
+      SECRET_KEY: colmena_ci_super_secret_key_1234567890abcdef123456
+      NEXTCLOUD_ADMIN_PASSWORD: colmena_ci_nextcloud
+      SUPERADMIN_EMAIL: admin@example.com
+      SUPERADMIN_PASSWORD: colmena_ci_superadmin
+      NEXTCLOUD_ADMIN_USER: admin
+      NEXTCLOUD_TRUSTED_DOMAINS: colmena.local,localhost,127.0.0.1
+      CORS_ALLOWED_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+    steps:
+      - name: Checkout code with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build local unified image for tests
+        run: docker build --pull --tag "$COLMENA_APP_IMAGE" .
+
+      - name: Materialize .env for compose
+        run: |
+          cat > .env <<EOF
+          POSTGRES_DB=colmena
+          POSTGRES_USER=colmena
+          POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+          PGADMIN_DEFAULT_EMAIL=admin@example.com
+          PGADMIN_DEFAULT_PASSWORD=${PGADMIN_DEFAULT_PASSWORD}
+          SECRET_KEY=${SECRET_KEY}
+          DEBUG=0
+          NEXTCLOUD_ADMIN_USER=${NEXTCLOUD_ADMIN_USER}
+          NEXTCLOUD_ADMIN_PASSWORD=${NEXTCLOUD_ADMIN_PASSWORD}
+          NEXTCLOUD_TRUSTED_DOMAINS=${NEXTCLOUD_TRUSTED_DOMAINS}
+          SUPERADMIN_EMAIL=${SUPERADMIN_EMAIL}
+          SUPERADMIN_PASSWORD=${SUPERADMIN_PASSWORD}
+          CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
+          HTTP_PORT=7180
+          BACKEND_PORT=7100
+          EOF
+
+      - name: Run compose smoke test (keep stack up)
+        run: ./scripts/compose-smoke.sh
+        env:
+          COMPOSE_FILE: docker-compose.yml
+          PROJECT_NAME: ci-colmena
+          TEARDOWN: "0"
+          PULL_IMAGES: "0"
+          ENV_EXPORT_PATH: smoke.env
+
+      - name: Export smoke environment
+        run: cat smoke.env >> $GITHUB_ENV
+
+      - name: Install Playwright dependencies
+        working-directory: tests/playwright
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: tests/playwright
+        run: npx playwright install --with-deps
+
+      - name: Run Playwright smoke suite
+        working-directory: tests/playwright
+        env:
+          PLAYWRIGHT_BASE_URL: ${{ env.PLAYWRIGHT_BASE_URL }}
+          PLAYWRIGHT_API_BASE_URL: ${{ env.PLAYWRIGHT_API_BASE_URL }}
+          PLAYWRIGHT_SUPERADMIN_EMAIL: ${{ env.SUPERADMIN_EMAIL }}
+          PLAYWRIGHT_SUPERADMIN_PASSWORD: ${{ env.SUPERADMIN_PASSWORD }}
+        run: npm test
+
+      - name: Upload compose smoke report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compose-smoke-report
+          path: smoke-report.md
+          if-no-files-found: ignore
+
+      - name: Upload Playwright reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-smoke-artifacts
+          path: |
+            playwright-report
+            test-results/playwright
+          if-no-files-found: ignore
+
+      - name: Teardown stack
+        if: always()
+        run: docker compose -f docker-compose.yml --project-name ci-colmena down --volumes --remove-orphans
+
+  build-unified:
+    needs: [prepare, stack-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code with submodules
@@ -121,7 +221,7 @@ jobs:
           mv /tmp/.buildx-cache-unified-new /tmp/.buildx-cache-unified
 
   notify-completion:
-    needs: [prepare, build-unified]
+    needs: [prepare, stack-tests, build-unified]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -129,10 +229,14 @@ jobs:
         id: status
         run: |
           unified_result="${{ needs.build-unified.result }}"
+          tests_result="${{ needs.stack-tests.result }}"
 
-          if [[ "$unified_result" == "success" ]]; then
+          if [[ "$tests_result" == "success" && "$unified_result" == "success" ]]; then
             echo "status=success" >> $GITHUB_OUTPUT
-            echo "message=✅ Unified Docker image built and pushed successfully" >> $GITHUB_OUTPUT
+            echo "message=✅ Compose smoke + Playwright tests passed and unified Docker image built successfully" >> $GITHUB_OUTPUT
+          elif [[ "$tests_result" != "success" ]]; then
+            echo "status=failure" >> $GITHUB_OUTPUT
+            echo "message=❌ Compose smoke or Playwright tests failed" >> $GITHUB_OUTPUT
           else
             echo "status=failure" >> $GITHUB_OUTPUT
             echo "message=❌ Unified Docker image build failed" >> $GITHUB_OUTPUT
@@ -159,10 +263,17 @@ jobs:
           script: |
             const status = "${{ steps.status.outputs.status }}";
             const message = "${{ steps.status.outputs.message }}";
+            const testsResult = "${{ needs.stack-tests.result }}";
+            const buildResult = "${{ needs.build-unified.result }}";
 
-            const body = `## 🐳 Unified Docker Build Status: ${status === 'success' ? '✅ SUCCESS' : '❌ FAILED'}
+            const body = `## 🐳 Unified Docker Build Pipeline: ${status === 'success' ? '✅ SUCCESS' : '❌ FAILED'}
 
             ${message}
+
+            | Stage | Status |
+            | --- | --- |
+            | Compose + Playwright Smoke | ${testsResult} |
+            | Build & Push | ${buildResult} |
 
             **Platforms:** ${{ needs.prepare.outputs.platforms }}
             **Commit:** \`${{ github.sha }}\``;
