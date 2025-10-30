@@ -10,3 +10,5 @@ For technical details jump directly to:
 - [`docs/backlog.md`](docs/backlog.md) to see active tasks.
 
 Keep scratch notes in `context/` and promote stable decisions into `docs/`. Update this file whenever the primary navigation changes.***
+
+> **Submodule policy:** Git submodules (e.g., `backend/`, `frontend/`) must not be modified unless explicitly required to unblock testing or builds. Document any required deviation before committing.
