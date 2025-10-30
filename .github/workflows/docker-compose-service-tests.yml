@@ -22,6 +22,7 @@ env:
   # Test environment variables
   POSTGRES_PASSWORD: test_secure_password_123
   SECRET_KEY: test_secret_key_for_testing_purposes_minimum_fifty_characters_required
+  COLMENA_SECRET_KEY: test_secret_key_for_testing_purposes_minimum_fifty_characters_required
   NEXTCLOUD_ADMIN_PASSWORD: test_nextcloud_admin_pass
   SUPERADMIN_PASSWORD: test_superadmin_pass
   PGADMIN_DEFAULT_PASSWORD: test_pgadmin_pass
@@ -47,6 +48,7 @@ jobs:
           cat > .env << EOF
           POSTGRES_PASSWORD=$POSTGRES_PASSWORD
           SECRET_KEY=$SECRET_KEY
+          COLMENA_SECRET_KEY=${COLMENA_SECRET_KEY:-$SECRET_KEY}
           NEXTCLOUD_ADMIN_PASSWORD=$NEXTCLOUD_ADMIN_PASSWORD
           SUPERADMIN_PASSWORD=$SUPERADMIN_PASSWORD
           PGADMIN_DEFAULT_PASSWORD=$PGADMIN_DEFAULT_PASSWORD
@@ -142,18 +144,19 @@ jobs:
       - name: Start infrastructure services (without main app)
         run: |
           echo "🚀 Starting infrastructure services..."
+          COMPOSE_CMD="docker compose -f docker-compose.yml -f docker-compose.override.yml"
           
           echo "📋 Validating docker-compose configuration..."
-          docker compose config --quiet || echo "Configuration validation failed"
+          $COMPOSE_CMD config --quiet || echo "Configuration validation failed"
           
           echo "📋 Checking services to start..."
-          docker compose config --services
+          $COMPOSE_CMD config --services
           
           echo "📋 Checking override file..."
           cat docker-compose.override.yml
           
           # Start only infrastructure services first
-          docker compose up -d postgres pgadmin nextcloud mail
+          $COMPOSE_CMD up -d postgres pgadmin nextcloud mail
           
           echo "⏳ Waiting for infrastructure services to become ready..."
           sleep 45
@@ -161,12 +164,13 @@ jobs:
       - name: Test PostgreSQL service
         run: |
           echo "🔍 Testing PostgreSQL service..."
+          COMPOSE_CMD="docker compose -f docker-compose.yml -f docker-compose.override.yml"
           
           # Wait for PostgreSQL to be ready
-          timeout 60 bash -c 'until docker compose exec -T postgres pg_isready -U colmena -d colmena; do echo "Waiting for PostgreSQL..."; sleep 2; done'
+          timeout 60 bash -c "until ${COMPOSE_CMD} exec -T postgres pg_isready -U colmena -d colmena; do echo 'Waiting for PostgreSQL...'; sleep 2; done"
           
           # Test PostgreSQL connectivity
-          if docker compose exec -T postgres psql -U colmena -d colmena -c "SELECT version();" > /dev/null 2>&1; then
+          if ${COMPOSE_CMD} exec -T postgres psql -U colmena -d colmena -c "SELECT version();" > /dev/null 2>&1; then
             echo "✅ PostgreSQL is running and accessible"
           else
             echo "❌ PostgreSQL connectivity test failed"
@@ -176,6 +180,7 @@ jobs:
       - name: Test PgAdmin service
         run: |
           echo "🔍 Testing PgAdmin service..."
+          COMPOSE_CMD="docker compose -f docker-compose.yml -f docker-compose.override.yml"
           
           # Wait for PgAdmin to be ready
           timeout 60 bash -c 'until curl -f http://localhost:5050 > /dev/null 2>&1; do echo "Waiting for PgAdmin..."; sleep 3; done'
@@ -209,6 +214,7 @@ jobs:
       - name: Test Mail service (Mailcrab)
         run: |
           echo "🔍 Testing Mail service (Mailcrab)..."
+          COMPOSE_CMD="docker compose -f docker-compose.yml -f docker-compose.override.yml"
           
           # Wait for Mailcrab to be ready
           timeout 60 bash -c 'until curl -f http://localhost:1080 > /dev/null 2>&1; do echo "Waiting for Mailcrab..."; sleep 3; done'
@@ -232,9 +238,10 @@ jobs:
       - name: Test service connectivity
         run: |
           echo "🔍 Testing inter-service connectivity..."
+          COMPOSE_CMD="docker compose -f docker-compose.yml -f docker-compose.override.yml"
           
           # Test database connectivity from within Docker network
-          if docker compose exec -T postgres psql -U colmena -d colmena -c "SELECT 1;" > /dev/null 2>&1; then
+          if ${COMPOSE_CMD} exec -T postgres psql -U colmena -d colmena -c "SELECT 1;" > /dev/null 2>&1; then
             echo "✅ Database internal connectivity working"
           else
             echo "❌ Database internal connectivity failed"
@@ -242,7 +249,7 @@ jobs:
           fi
           
           # Test that services can resolve each other
-          if docker compose exec -T postgres nslookup mail > /dev/null 2>&1; then
+          if ${COMPOSE_CMD} exec -T postgres nslookup mail > /dev/null 2>&1; then
             echo "✅ Service DNS resolution working"
           else
             echo "❌ Service DNS resolution failed"
@@ -253,17 +260,18 @@ jobs:
         if: inputs.verbose_logs == true || failure()
         run: |
           echo "📋 Collecting service logs..."
+          COMPOSE_CMD="docker compose -f docker-compose.yml -f docker-compose.override.yml"
           echo "=== PostgreSQL logs ==="
-          docker compose logs postgres | tail -50
+          ${COMPOSE_CMD} logs postgres | tail -50
           
           echo "=== PgAdmin logs ==="
-          docker compose logs pgadmin | tail -50
+          ${COMPOSE_CMD} logs pgadmin | tail -50
           
           echo "=== Nextcloud logs ==="
-          docker compose logs nextcloud | tail -50
+          ${COMPOSE_CMD} logs nextcloud | tail -50
           
           echo "=== Mail logs ==="
-          docker compose logs mail | tail -50
+          ${COMPOSE_CMD} logs mail | tail -50
 
       - name: Check resource usage
         run: |
@@ -280,7 +288,7 @@ jobs:
         if: always() && !inputs.skip_cleanup
         run: |
           echo "🧹 Cleaning up services..."
-          docker compose down -v
+          docker compose -f docker-compose.yml -f docker-compose.override.yml down -v
           docker system prune -f
           
       - name: Preserve environment for debugging
@@ -294,6 +302,7 @@ jobs:
           echo "- Nextcloud API: http://localhost:8004"
           echo ""
           echo "To cleanup manually: docker compose down -v"
+          echo "Or: docker compose -f docker-compose.yml -f docker-compose.override.yml down -v"
 
   test-summary:
     name: Service Test Summary

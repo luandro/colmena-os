@@ -17,6 +17,7 @@ env:
   # Test environment variables
   POSTGRES_PASSWORD: test_secure_password_123
   SECRET_KEY: test_secret_key_for_testing_purposes_minimum_fifty_characters_required
+  COLMENA_SECRET_KEY: test_secret_key_for_testing_purposes_minimum_fifty_characters_required
   NEXTCLOUD_ADMIN_PASSWORD: test_nextcloud_admin_pass
   SUPERADMIN_PASSWORD: test_superadmin_pass
   PGADMIN_DEFAULT_PASSWORD: test_pgadmin_pass
@@ -42,6 +43,7 @@ jobs:
           cat > .env << EOF
           POSTGRES_PASSWORD=$POSTGRES_PASSWORD
           SECRET_KEY=$SECRET_KEY
+          COLMENA_SECRET_KEY=${COLMENA_SECRET_KEY:-$SECRET_KEY}
           NEXTCLOUD_ADMIN_PASSWORD=$NEXTCLOUD_ADMIN_PASSWORD
           SUPERADMIN_PASSWORD=$SUPERADMIN_PASSWORD
           PGLADMIN_DEFAULT_PASSWORD=$PGADMIN_DEFAULT_PASSWORD
@@ -122,7 +124,13 @@ jobs:
           docker network ls
           
           # Check if postgres container is connected to the network
-          if docker inspect colmena_postgres --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}' | grep -q "colmena"; then
+          container_id="$(docker compose ps -q postgres)"
+          if [ -z "$container_id" ]; then
+            echo "❌ PostgreSQL container ID could not be determined"
+            exit 1
+          fi
+
+          if docker inspect "$container_id" --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' | grep -q "colmena_devops"; then
             echo "✅ PostgreSQL container is connected to colmena_devops network"
           else
             echo "❌ PostgreSQL container network connection failed"
