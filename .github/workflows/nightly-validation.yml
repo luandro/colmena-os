@@ -38,6 +38,11 @@ jobs:
             superadmin_email="admin@example.com"
           fi
           echo "SUPERADMIN_EMAIL=${superadmin_email}" >> "$GITHUB_ENV"
+          superadmin_password="$(awk -F= '/^SUPERADMIN_PASSWORD=/{val=$2} END {print val}' .env)"
+          if [[ -z "${superadmin_password}" ]]; then
+            superadmin_password="CHANGE_ME"
+          fi
+          echo "SUPERADMIN_PASSWORD=${superadmin_password}" >> "$GITHUB_ENV"
 
       - name: Setup Playwright
         working-directory: tests/playwright
@@ -54,7 +59,7 @@ jobs:
           PLAYWRIGHT_BASE_URL: ${{ env.PLAYWRIGHT_BASE_URL }}
           PLAYWRIGHT_API_BASE_URL: ${{ env.PLAYWRIGHT_API_BASE_URL }}
           PLAYWRIGHT_SUPERADMIN_EMAIL: ${{ env.SUPERADMIN_EMAIL }}
-          PLAYWRIGHT_SUPERADMIN_PASSWORD: ${{ secrets.SUPERADMIN_PASSWORD || 'test_admin_password' }}
+          PLAYWRIGHT_SUPERADMIN_PASSWORD: ${{ secrets.SUPERADMIN_PASSWORD || env.SUPERADMIN_PASSWORD }}
 
       - name: Upload compose smoke report
         if: always()
