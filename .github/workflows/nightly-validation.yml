@@ -1,0 +1,250 @@
+name: Nightly Published Image Validation
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM UTC
+  workflow_dispatch:
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: communityfirst/colmena-app
+
+jobs:
+  test-latest-published:
+    name: Validate Latest Published Stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code (no submodules needed)
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Create .env from template
+        run: cp .env.template .env
+
+      - name: Pull latest published images
+        run: |
+          echo "📥 Pulling latest published images..."
+          docker compose pull
+
+      - name: Check pulled image
+        run: |
+          echo "🔍 Verifying pulled image..."
+          docker images | grep colmena-app
+
+      - name: Start stack with published images
+        run: |
+          echo "🚀 Starting ColmenaOS stack with latest published images..."
+          docker compose up -d
+
+      - name: Wait for services to be ready
+        run: |
+          echo "⏳ Waiting for services to initialize..."
+          sleep 45
+
+      - name: Check service health
+        run: |
+          echo "🔍 Checking published stack health..."
+          docker compose ps
+          docker compose logs colmena-app --tail=50
+
+      - name: Run compose smoke test
+        run: |
+          echo "🧪 Running compose smoke test..."
+          TEARDOWN=0 ./scripts/compose-smoke.sh
+
+      - name: Export environment for Playwright
+        run: |
+          echo "PLAYWRIGHT_BASE_URL=http://localhost:80" >> $GITHUB_ENV
+          echo "PLAYWRIGHT_API_BASE_URL=http://localhost:8000/api" >> $GITHUB_ENV
+          echo "SUPERADMIN_EMAIL=admin@colmena.local" >> $GITHUB_ENV
+
+      - name: Setup Playwright
+        working-directory: tests/playwright
+        run: npm install
+
+      - name: Install Playwright browsers
+        working-directory: tests/playwright
+        run: npx playwright install --with-deps
+
+      - name: Run full Playwright suite
+        working-directory: tests/playwright
+        run: npm run test
+        env:
+          PLAYWRIGHT_BASE_URL: ${{ env.PLAYWRIGHT_BASE_URL }}
+          PLAYWRIGHT_API_BASE_URL: ${{ env.PLAYWRIGHT_API_BASE_URL }}
+          PLAYWRIGHT_SUPERADMIN_EMAIL: ${{ env.SUPERADMIN_EMAIL }}
+          PLAYWRIGHT_SUPERADMIN_PASSWORD: ${{ secrets.SUPERADMIN_PASSWORD || 'test_admin_password' }}
+
+      - name: Upload compose smoke report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-smoke-report
+          path: smoke-report.md
+          if-no-files-found: warn
+
+      - name: Upload Playwright reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-playwright-artifacts
+          path: |
+            tests/playwright/playwright-report
+            tests/playwright/test-results
+          if-no-files-found: warn
+
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          echo "📋 Collecting service logs..."
+          echo "=== Colmena App Logs ==="
+          docker compose logs colmena-app --tail=200
+          echo "=== PostgreSQL Logs ==="
+          docker compose logs postgres --tail=100
+          echo "=== Nextcloud Logs ==="
+          docker compose logs nextcloud --tail=100
+          echo "=== All Services Status ==="
+          docker compose ps
+
+      - name: Teardown stack
+        if: always()
+        run: |
+          echo "🧹 Cleaning up services..."
+          docker compose down -v
+          docker system prune -f
+
+      - name: Create issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'nightly-validation-failure',
+              per_page: 1
+            });
+
+            if (issues.length === 0) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: '🚨 Nightly Validation Failed for Published Stack',
+                body: `## Published Stack Validation Failure
+
+            The nightly validation of the published Docker images failed.
+
+            **Image:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest\`
+            **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            **Date:** ${new Date().toISOString()}
+
+            ### What This Means
+            The published stack that users are pulling may be broken. This could indicate:
+            - Docker Hub image corruption
+            - Dependency changes in base images
+            - Infrastructure compatibility issues
+            - Service configuration problems
+
+            ### Action Required
+            1. **Investigate immediately** - Check the workflow logs
+            2. **Verify image integrity** - Test locally with \`docker compose pull && docker compose up\`
+            3. **Check dependencies** - Review if any upstream images changed
+            4. **Consider rollback** - If issue persists, consider pointing to last known good SHA
+
+            ### Testing Locally
+            \`\`\`bash
+            docker compose pull
+            docker compose up -d
+            ./scripts/compose-smoke.sh
+            cd tests/playwright && npm run test
+            \`\`\`
+
+            This issue will auto-close when nightly validation passes.`,
+                labels: ['bug', 'ci', 'priority-high', 'nightly-validation-failure']
+              });
+            } else {
+              const issue = issues[0];
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `❌ Nightly validation still failing as of ${new Date().toISOString()}
+
+            **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`
+              });
+            }
+
+      - name: Close issue on success
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'nightly-validation-failure',
+              per_page: 10
+            });
+
+            for (const issue of issues) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: 'closed'
+              });
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `✅ Nightly validation passed. Published stack is working correctly.
+
+            **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            **Date:** ${new Date().toISOString()}
+
+            Closing this issue.`
+              });
+            }
+
+  nightly-summary:
+    name: Nightly Validation Summary
+    runs-on: ubuntu-latest
+    needs: [test-latest-published]
+    if: always()
+    steps:
+      - name: Generate summary
+        run: |
+          test_result="${{ needs.test-latest-published.result }}"
+
+          echo "# 🌙 Nightly Validation Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Date:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$test_result" = "success" ]; then
+            echo "## ✅ PUBLISHED STACK HEALTHY" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Test | Status |" >> $GITHUB_STEP_SUMMARY
+            echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Image Pull | ✅ Success |" >> $GITHUB_STEP_SUMMARY
+            echo "| Stack Startup | ✅ Running |" >> $GITHUB_STEP_SUMMARY
+            echo "| Compose Smoke | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+            echo "| Playwright Full Suite | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Image:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "✅ Published stack is working correctly" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ❌ PUBLISHED STACK ISSUES DETECTED" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Nightly validation failed. Check logs for details." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Image:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ **Action Required:** Investigate failure and consider rollback" >> $GITHUB_STEP_SUMMARY
+          fi

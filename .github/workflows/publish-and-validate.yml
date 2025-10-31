@@ -1,0 +1,223 @@
+name: Publish and Validate
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: communityfirst/colmena-app
+
+jobs:
+  build-and-push:
+    name: Build and Push to Docker Hub
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
+      short_sha: ${{ steps.meta.outputs.version }}
+    steps:
+      - name: Checkout code with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up QEMU for multi-arch builds
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+            type=sha,format=short,prefix=
+
+      - name: Build and push multi-platform image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Image build summary
+        run: |
+          echo "# 🐳 Multi-Platform Image Published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Images pushed:**" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Platforms:** linux/amd64, linux/arm64" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+
+  validate-published:
+    name: Validate Published Image
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code (no submodules needed)
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Create .env from template
+        run: cp .env.template .env
+
+      - name: Set image to test
+        run: |
+          echo "COLMENA_APP_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_ENV
+
+      - name: Pull published image
+        run: |
+          echo "📥 Pulling just-published image..."
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+      - name: Start stack with published image
+        run: |
+          echo "🚀 Starting ColmenaOS stack with published image..."
+          docker compose up -d
+        env:
+          COLMENA_APP_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+      - name: Wait for services to be ready
+        run: |
+          echo "⏳ Waiting for services to initialize..."
+          sleep 45
+
+      - name: Check service health
+        run: |
+          echo "🔍 Checking published stack health..."
+          docker compose ps
+          docker compose logs colmena-app --tail=50
+
+      - name: Run compose smoke test
+        run: |
+          echo "🧪 Running compose smoke test on published image..."
+          TEARDOWN=0 ./scripts/compose-smoke.sh
+
+      - name: Export environment for Playwright
+        run: |
+          echo "PLAYWRIGHT_BASE_URL=http://localhost:80" >> $GITHUB_ENV
+          echo "PLAYWRIGHT_API_BASE_URL=http://localhost:8000/api" >> $GITHUB_ENV
+          echo "SUPERADMIN_EMAIL=admin@colmena.local" >> $GITHUB_ENV
+
+      - name: Setup Playwright
+        working-directory: tests/playwright
+        run: npm install
+
+      - name: Install Playwright browsers
+        working-directory: tests/playwright
+        run: npx playwright install --with-deps
+
+      - name: Run Playwright smoke suite
+        working-directory: tests/playwright
+        run: npm run test
+        env:
+          PLAYWRIGHT_BASE_URL: ${{ env.PLAYWRIGHT_BASE_URL }}
+          PLAYWRIGHT_API_BASE_URL: ${{ env.PLAYWRIGHT_API_BASE_URL }}
+          PLAYWRIGHT_SUPERADMIN_EMAIL: ${{ env.SUPERADMIN_EMAIL }}
+          PLAYWRIGHT_SUPERADMIN_PASSWORD: ${{ secrets.SUPERADMIN_PASSWORD || 'test_admin_password' }}
+
+      - name: Upload compose smoke report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: published-smoke-report
+          path: smoke-report.md
+          if-no-files-found: warn
+
+      - name: Upload Playwright reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: published-playwright-artifacts
+          path: |
+            tests/playwright/playwright-report
+            tests/playwright/test-results
+          if-no-files-found: warn
+
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          echo "📋 Collecting service logs..."
+          echo "=== Colmena App Logs ==="
+          docker compose logs colmena-app --tail=200
+          echo "=== PostgreSQL Logs ==="
+          docker compose logs postgres --tail=100
+          echo "=== All Services Status ==="
+          docker compose ps
+
+      - name: Teardown stack
+        if: always()
+        run: |
+          echo "🧹 Cleaning up services..."
+          docker compose down -v
+          docker system prune -f
+
+  publish-summary:
+    name: Publish & Validate Summary
+    runs-on: ubuntu-latest
+    needs: [build-and-push, validate-published]
+    if: always()
+    steps:
+      - name: Generate summary
+        run: |
+          build_result="${{ needs.build-and-push.result }}"
+          validate_result="${{ needs.validate-published.result }}"
+
+          echo "# 🚀 Publish & Validation Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$build_result" = "success" ] && [ "$validate_result" = "success" ]; then
+            echo "## ✅ PUBLISHED IMAGE VALIDATED" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
+            echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Multi-platform Build | ✅ Success |" >> $GITHUB_STEP_SUMMARY
+            echo "| Docker Hub Push | ✅ Published |" >> $GITHUB_STEP_SUMMARY
+            echo "| Published Image Test | ✅ Validated |" >> $GITHUB_STEP_SUMMARY
+            echo "| Compose Smoke | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+            echo "| Playwright E2E | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Image:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest\`" >> $GITHUB_STEP_SUMMARY
+            echo "**SHA:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **Safe for production use**" >> $GITHUB_STEP_SUMMARY
+          elif [ "$build_result" = "success" ] && [ "$validate_result" != "success" ]; then
+            echo "## ⚠️ PUBLISHED BUT VALIDATION FAILED" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Image was built and pushed but validation tests failed." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Image:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest\`" >> $GITHUB_STEP_SUMMARY
+            echo "**SHA:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "❌ **DO NOT USE - Published image has issues**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Action Required:** Investigate test failures and consider rollback" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ❌ BUILD FAILED" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Multi-platform build failed. Image was not published." >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Exit with failure if validation failed
+          if [ "$validate_result" != "success" ]; then
+            exit 1
+          fi
