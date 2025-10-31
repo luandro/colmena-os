@@ -158,8 +158,9 @@ RUN chown -R colmena:colmena /opt/app && \
 # Set up frontend (serve with nginx)
 COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
 
-# Note: Nginx configuration is provided via docker-compose.yml mounts
-# See docker/colmena-app-nginx.conf for the authoritative configuration
+# Provide a bundled nginx default server so standalone containers work out of the box.
+# docker-compose can still override this by mounting docker/colmena-app-nginx-*.conf
+COPY docker/colmena-app-nginx-default-http.conf /etc/nginx/http.d/default.conf
 
 # Supervisor configuration to run both backend (gunicorn) and nginx
 # Note: This can be overridden by mounting docker/colmena-app-supervisord.conf in docker-compose.yml

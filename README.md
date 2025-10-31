@@ -106,10 +106,9 @@ The script expects the defaults from `.env.example`. If you override credentials
 
 ### Nginx Configuration
 
-- **Location**: `docker/colmena-app-nginx.conf` (authoritative configuration)
-- **Mounted to**: `/etc/nginx/http.d/default.conf` inside the container
-- **Customization**: Edit the config file and restart the container with `docker compose restart colmena-app`
-- **Alternative**: Mount your own config by updating `docker-compose.yml` volumes section
+- **Bundled default**: `docker/colmena-app-nginx-default-http.conf` (copied into `/etc/nginx/http.d/default.conf` during the image build)
+- **Compose override**: `docker/colmena-app-nginx.conf` mounts to `/etc/nginx/http.d/colmena.conf` as an empty override hook for local tweaks
+- **Customization**: Copy the default server block (or mount your own file) and restart with `docker compose restart colmena-app`
 
 ### Backend Scripts
 
