@@ -89,24 +89,6 @@ jobs:
           echo "📥 Pulling just-published image..."
           docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
-      - name: Start stack with published image
-        run: |
-          echo "🚀 Starting ColmenaOS stack with published image..."
-          docker compose up -d
-        env:
-          COLMENA_APP_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-
-      - name: Wait for services to be ready
-        run: |
-          echo "⏳ Waiting for services to initialize..."
-          sleep 45
-
-      - name: Check service health
-        run: |
-          echo "🔍 Checking published stack health..."
-          docker compose ps
-          docker compose logs colmena-app --tail=50
-
       - name: Run compose smoke test
         run: |
           echo "🧪 Running compose smoke test on published image..."

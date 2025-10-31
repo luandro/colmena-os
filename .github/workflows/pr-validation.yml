@@ -30,21 +30,6 @@ jobs:
           echo "🔨 Building colmena-app from local source..."
           docker compose -f $COMPOSE_FILE build colmena-app
 
-      - name: Start stack with local build
-        run: |
-          echo "🚀 Starting ColmenaOS stack with local build..."
-          docker compose -f $COMPOSE_FILE up -d
-
-      - name: Wait for services to be ready
-        run: |
-          echo "⏳ Waiting for services to initialize..."
-          sleep 45
-
-      - name: Check service health
-        run: |
-          echo "🔍 Checking service health..."
-          docker compose -f $COMPOSE_FILE ps
-
       - name: Run compose smoke test
         run: |
           echo "🧪 Running compose smoke test..."

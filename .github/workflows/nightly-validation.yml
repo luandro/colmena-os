@@ -23,36 +23,10 @@ jobs:
       - name: Create .env from template
         run: cp .env.example .env
 
-      - name: Pull latest published images
-        run: |
-          echo "📥 Pulling latest published images..."
-          docker compose pull
-
-      - name: Check pulled image
-        run: |
-          echo "🔍 Verifying pulled image..."
-          docker images | grep colmena-app
-
-      - name: Start stack with published images
-        run: |
-          echo "🚀 Starting ColmenaOS stack with latest published images..."
-          docker compose up -d
-
-      - name: Wait for services to be ready
-        run: |
-          echo "⏳ Waiting for services to initialize..."
-          sleep 45
-
-      - name: Check service health
-        run: |
-          echo "🔍 Checking published stack health..."
-          docker compose ps
-          docker compose logs colmena-app --tail=50
-
       - name: Run compose smoke test
         run: |
           echo "🧪 Running compose smoke test..."
-          TEARDOWN=0 ./scripts/compose-smoke.sh
+          TEARDOWN=0 PULL_IMAGES=1 ./scripts/compose-smoke.sh
 
       - name: Export environment for Playwright
         run: |
