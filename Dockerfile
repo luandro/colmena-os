@@ -192,29 +192,8 @@ server {
 }
 EOF
 
-# Supervisor configuration to run both backend (gunicorn) and nginx
-COPY <<'EOF' /etc/supervisor/conf.d/supervisord.conf
-[supervisord]
-user=root
-nodaemon=true
-logfile=/var/log/supervisor/supervisord.log
-pidfile=/var/run/supervisord.pid
-
-[program:backend]
-command=/opt/app/start-backend.sh
-directory=/opt/app
-autostart=true
-autorestart=true
-stdout_logfile=/var/log/supervisor/backend.log
-stderr_logfile=/var/log/supervisor/backend.log
-
-[program:nginx]
-command=nginx -g "daemon off;"
-autostart=true
-autorestart=true
-stdout_logfile=/var/log/supervisor/nginx.log
-stderr_logfile=/var/log/supervisor/nginx.log
-EOF
+# Note: Supervisor configuration is mounted from docker/colmena-app-supervisord.conf
+# in docker-compose.yml to allow runtime configuration changes
 
 # Environment
 ENV PYTHONUNBUFFERED=1 \
