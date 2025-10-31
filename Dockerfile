@@ -155,42 +155,11 @@ RUN chmod +x /opt/app/start-backend.sh
 RUN chown -R colmena:colmena /opt/app && \
     chown -R colmena:colmena /var/log/supervisor
 
-# Set up frontend (serve with nginx) and write a unified nginx config
+# Set up frontend (serve with nginx)
 COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
 
-# Provide a proper nginx default server that serves the frontend and proxies /api to backend
-RUN cat > /etc/nginx/http.d/default.conf <<'EOF'
-server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
-    server_name _;
-
-    # Serve built frontend
-    root /usr/share/nginx/html;
-    index index.html;
-
-    # Proxy API to Django backend (gunicorn) inside the same container
-    location /api/ {
-        proxy_pass http://127.0.0.1:8000/;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_redirect off;
-        proxy_set_header Connection "";
-        send_timeout 120s;
-        proxy_connect_timeout 120s;
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
-    }
-
-    # History API fallback for SPAs
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-}
-EOF
+# Note: Nginx configuration is provided via docker-compose.yml mounts
+# See docker/colmena-app-nginx.conf for the authoritative configuration
 
 # Supervisor configuration to run both backend (gunicorn) and nginx
 # Note: This can be overridden by mounting docker/colmena-app-supervisord.conf in docker-compose.yml

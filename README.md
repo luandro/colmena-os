@@ -104,6 +104,13 @@ The script expects the defaults from `.env.example`. If you override credentials
 - The frontend submodule temporarily tracks `git@gitlab.com:luandro/frontend.git` on branch `fix-openapi-status-fallback` while the upstream PR is under review.
 - Running `npm install` within `frontend/` triggers OpenAPI client generation; ensure the backend schema is reachable (bring the stack up) or install with `--ignore-scripts` and regenerate later.
 
+### Nginx Configuration
+
+- **Location**: `docker/colmena-app-nginx.conf` (authoritative configuration)
+- **Mounted to**: `/etc/nginx/http.d/default.conf` inside the container
+- **Customization**: Edit the config file and restart the container with `docker compose restart colmena-app`
+- **Alternative**: Mount your own config by updating `docker-compose.yml` volumes section
+
 ### Backend Scripts
 
 The `colmena-app` container provides two startup scripts:
