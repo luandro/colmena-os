@@ -1,6 +1,7 @@
 [submodule "frontend"]
 	path = frontend
-	url = https://gitlab.com/colmena-project/dev/frontend.git
+	url = git@gitlab.com:luandro/frontend.git
+	branch = fix-openapi-status-fallback
 [submodule "backend"]
 	path = backend
 	url = https://gitlab.com/luandro/backend.git
