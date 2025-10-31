@@ -74,6 +74,7 @@ __pycache__/
 htmlcov/
 playwright-report/
 test-results/
+tests/playwright/ms-playwright/
 
 # Node.js dependencies
 node_modules/
