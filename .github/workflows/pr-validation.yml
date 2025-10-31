@@ -37,9 +37,14 @@ jobs:
 
       - name: Export environment for Playwright
         run: |
-          echo "PLAYWRIGHT_BASE_URL=http://localhost:7180" >> $GITHUB_ENV
-          echo "PLAYWRIGHT_API_BASE_URL=http://localhost:7100/api" >> $GITHUB_ENV
-          echo "SUPERADMIN_EMAIL=admin@colmena.local" >> $GITHUB_ENV
+          set -euo pipefail
+          echo "PLAYWRIGHT_BASE_URL=http://localhost:7180" >> "$GITHUB_ENV"
+          echo "PLAYWRIGHT_API_BASE_URL=http://localhost:7100/api" >> "$GITHUB_ENV"
+          superadmin_email="$(awk -F= '/^SUPERADMIN_EMAIL=/{val=$2} END {print val}' .env)"
+          if [[ -z "${superadmin_email}" ]]; then
+            superadmin_email="admin@example.com"
+          fi
+          echo "SUPERADMIN_EMAIL=${superadmin_email}" >> "$GITHUB_ENV"
 
       - name: Setup Playwright
         working-directory: tests/playwright
