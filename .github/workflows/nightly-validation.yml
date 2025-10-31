@@ -21,7 +21,7 @@ jobs:
           submodules: false
 
       - name: Create .env from template
-        run: cp .env.template .env
+        run: cp .env.example .env
 
       - name: Pull latest published images
         run: |
