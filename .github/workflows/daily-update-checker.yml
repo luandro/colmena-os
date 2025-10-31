@@ -12,6 +12,9 @@ on:
         default: 'false'
         type: boolean
 
+permissions:
+  contents: write
+
 env:
   DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
 

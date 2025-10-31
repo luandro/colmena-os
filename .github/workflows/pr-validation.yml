@@ -23,6 +23,14 @@ on:
       - '.env*'
   workflow_dispatch:
 
+concurrency:
+  group: pr-validation-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
 env:
   COMPOSE_FILE: docker-compose.local.yml
 
@@ -31,14 +39,32 @@ jobs:
     name: Test Local Build
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    env:
+      DOCKER_BUILDKIT: 1
+      COMPOSE_DOCKER_CLI_BUILD: 1
     steps:
       - name: Checkout code with submodules
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
+      - name: Restore Docker build cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: buildx-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            buildx-${{ runner.os }}-
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Prepare Docker cache directory
+        run: |
+          mkdir -p /tmp/.buildx-cache
+          rm -rf /tmp/.buildx-cache-new
+          mkdir -p /tmp/.buildx-cache-new
 
       - name: Create .env from template
         run: cp .env.example .env
@@ -46,7 +72,12 @@ jobs:
       - name: Build local unified image
         run: |
           echo "🔨 Building colmena-app from local source..."
-          docker compose -f $COMPOSE_FILE build colmena-app
+          docker buildx bake -f "$COMPOSE_FILE" colmena-app \
+            --load \
+            --set '*.cache-from=type=local,src=/tmp/.buildx-cache' \
+            --set '*.cache-to=type=local,dest=/tmp/.buildx-cache-new'
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
       - name: Run compose smoke test
         run: |
@@ -73,9 +104,24 @@ jobs:
           fi
           echo "SUPERADMIN_PASSWORD=${superadmin_password}" >> "$GITHUB_ENV"
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: tests/playwright/package-lock.json
+
+      - name: Restore Playwright browser cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('tests/playwright/package-lock.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
       - name: Setup Playwright
         working-directory: tests/playwright
-        run: npm install
+        run: npm ci
 
       - name: Install Playwright browsers
         working-directory: tests/playwright
