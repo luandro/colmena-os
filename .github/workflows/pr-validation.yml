@@ -3,6 +3,24 @@ name: PR Validation
 on:
   pull_request:
     branches: [main, develop]
+    paths:
+      - 'Dockerfile'
+      - 'Dockerfile.*'
+      - 'docker-compose*.yml'
+      - 'docker/**'
+      - 'scripts/**'
+      - 'colmena-devops/**'
+      - 'tests/**'
+      - 'Makefile'
+      - 'balena.yml'
+      - 'cloud-init*.yml'
+      - 'supervisord.conf'
+      - 'start-backend.sh'
+      - 'backend'
+      - 'backend/**'
+      - 'frontend'
+      - 'frontend/**'
+      - '.env*'
   workflow_dispatch:
 
 env:
