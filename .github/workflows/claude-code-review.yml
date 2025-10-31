@@ -2,7 +2,12 @@ name: Claude Code Review
 
 on:
   pull_request:
-    types: [opened, synchronize]
+    types:
+      - opened
+      - ready_for_review
+  issue_comment:
+    types:
+      - created
     # Optional: Only run on specific file changes
     # paths:
     #   - "src/**/*.ts"
@@ -12,6 +17,14 @@ on:
 
 jobs:
   claude-review:
+    if: |
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.draft == false &&
+       (github.event.action == 'opened' || github.event.action == 'ready_for_review')) ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       github.actor != 'github-actions' &&
+       (contains(github.event.comment.body, '@claude') || contains(github.event.comment.body, '@Claude')))
     # Optional: Filter by PR author
     # if: |
     #   github.event.pull_request.user.login == 'external-contributor' ||
@@ -26,10 +39,19 @@ jobs:
       id-token: write
     
     steps:
-      - name: Checkout repository
+      - name: Checkout repository (pull request)
+        if: github.event_name == 'pull_request'
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+          ref: ${{ github.head_ref }}
+
+      - name: Checkout repository (issue comment)
+        if: github.event_name == 'issue_comment'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: ${{ format('refs/pull/{0}/head', github.event.issue.number) }}
 
       - name: Run Claude Code Review
         id: claude-review
@@ -51,4 +73,3 @@ jobs:
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://docs.anthropic.com/en/docs/claude-code/sdk#command-line for available options
           claude_args: '--allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"'
-
