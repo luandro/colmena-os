@@ -8,6 +8,36 @@ STATIC_ROOT=${STATIC_ROOT:-/opt/app/static}
 MEDIA_ROOT=${MEDIA_ROOT:-/opt/app/media}
 LOG_ROOT=${LOG_ROOT:-/opt/app/logs}
 
+# Validate required environment variables
+echo "Validating required environment variables..."
+MISSING_VARS=0
+
+check_required_var() {
+    VAR_NAME=$1
+    VAR_VALUE=$(eval echo \$$VAR_NAME)
+    if [ -z "$VAR_VALUE" ] || [ "$VAR_VALUE" = "CHANGE_ME" ]; then
+        echo "ERROR: Required environment variable $VAR_NAME is not set or has placeholder value"
+        MISSING_VARS=$((MISSING_VARS + 1))
+    fi
+}
+
+# Critical environment variables that must be set
+check_required_var "SUPERADMIN_EMAIL"
+check_required_var "SUPERADMIN_PASSWORD"
+check_required_var "SECRET_KEY"
+check_required_var "POSTGRES_PASSWORD"
+check_required_var "NEXTCLOUD_ADMIN_PASSWORD"
+
+if [ $MISSING_VARS -gt 0 ]; then
+    echo ""
+    echo "ERROR: $MISSING_VARS required environment variable(s) missing or have placeholder values"
+    echo "Please set all required variables in your .env file"
+    exit 1
+fi
+
+echo "✓ All required environment variables validated"
+echo ""
+
 if [ "$(id -u)" -eq 0 ]; then
     mkdir -p "$STATIC_ROOT" "$MEDIA_ROOT" "$LOG_ROOT"
     chown colmena:colmena "$STATIC_ROOT" "$MEDIA_ROOT" "$LOG_ROOT"
