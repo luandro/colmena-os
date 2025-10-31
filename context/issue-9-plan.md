@@ -17,23 +17,23 @@
 - `docker/colmena-app-nginx-default-http.conf` - Keep as authoritative source
 - Documentation updates
 
-**Decision: Use MOUNTED config as authoritative**
-- Better for development (can override without rebuild)
-- Docker best practice (config external to image)
-- More flexible for different environments
+**Decision: Bundle canonical config + allow mounted overrides**
+- Image ships with `docker/colmena-app-nginx-default-http.conf` copied into `/etc/nginx/http.d/default.conf` so standalone runs stay functional.
+- docker-compose keeps override mounts for local tweaks; keep override files aligned with the canonical config.
+- Developers can still mount custom configs without rebuilding.
 
 ## Implementation Steps
 
 ### Step 1: Update Dockerfile
-- [x] Remove the embedded nginx config RUN command (lines 162-193)
+- [x] Replace inline heredoc with `COPY docker/colmena-app-nginx-default-http.conf /etc/nginx/http.d/default.conf`
 - [x] Keep nginx package installation
 - [x] Keep other configurations (supervisor, healthcheck, etc.)
 
 ### Step 2: Enhance Mounted Config Files
-- [x] Add comments to `docker/colmena-app-nginx.conf` explaining the configuration
-- [x] Ensure `docker/colmena-app-nginx-default-http.conf` is the primary config
+- [x] Add comments clarifying `docker/colmena-app-nginx-default-http.conf` is canonical
+- [x] Keep `docker/colmena-app-nginx.conf` as optional compose override hook with instructions to mirror canonical config when used
 - [x] Keep `docker/colmena-app-nginx-disable.conf` as disabled placeholder
-- [x] Fixed duplicate default_server conflict by removing from colmena.conf
+- [x] Ensure default server only defined once (in canonical config)
 
 ### Step 3: Documentation Updates
 - [x] Update README.md to document nginx config location
@@ -65,11 +65,11 @@
 
 **Problem Solved**: Nginx configuration was duplicated between embedded Dockerfile config and mounted compose configs, creating drift risk.
 
-**Solution Implemented**: Consolidated to use MOUNTED configs as authoritative source:
-- Removed embedded nginx config from Dockerfile
-- Enhanced both mounted config files with detailed comments
-- Fixed duplicate default_server conflict (kept in default.conf, removed from colmena.conf)
-- Added README documentation for contributors
+**Solution Implemented**: Consolidated around a single canonical config bundled with the image:
+- Dockerfile copies `docker/colmena-app-nginx-default-http.conf` into `/etc/nginx/http.d/default.conf`
+- Compose override file documents how to extend/replace without diverging from canonical config
+- README documents canonical vs override locations
+- Comments tightened across config files to prevent drift
 
 **Testing Results**:
 - Build: SUCCESS
