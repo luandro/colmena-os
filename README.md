@@ -103,7 +103,15 @@ The script expects the defaults from `.env.example`. If you override credentials
 
 - The frontend submodule temporarily tracks `git@gitlab.com:luandro/frontend.git` on branch `fix-openapi-status-fallback` while the upstream PR is under review.
 - Running `npm install` within `frontend/` triggers OpenAPI client generation; ensure the backend schema is reachable (bring the stack up) or install with `--ignore-scripts` and regenerate later.
-- Backend management commands are exposed through `/opt/app/entrypoint.sh` inside `colmena-app`. Example: `docker compose exec colmena-app /opt/app/entrypoint.sh migrate`.
+
+### Backend Scripts
+
+The `colmena-app` container provides two startup scripts:
+
+- **`/opt/app/start-backend.sh`** (canonical) – Main startup script used by supervisor. Handles privilege dropping, database setup, migrations, and gunicorn startup. Runs backend as non-root `colmena` user.
+- **`/opt/app/entrypoint.sh`** (legacy) – Available for manual management commands. Example: `docker compose exec colmena-app /opt/app/entrypoint.sh migrate`.
+
+For production use, `start-backend.sh` is the recommended script as it includes security improvements and better error handling.
 
 ## Useful Commands
 

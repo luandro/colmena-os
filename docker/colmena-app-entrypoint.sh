@@ -1,4 +1,15 @@
 #!/bin/sh
+# LEGACY SCRIPT: This script is available for manual management commands only.
+#
+# For production startup, use /opt/app/start-backend.sh instead.
+# start-backend.sh provides:
+#   - Non-root execution via supervisor's user directive
+#   - Better error handling and privilege dropping
+#   - Improved ownership management
+#
+# This script remains mounted for backwards compatibility with manual commands:
+#   docker compose exec colmena-app /opt/app/entrypoint.sh migrate
+#   docker compose exec colmena-app /opt/app/entrypoint.sh setup_db
 
 set -eu
 
