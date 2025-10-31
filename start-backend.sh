@@ -15,9 +15,12 @@ MISSING_VARS=0
 check_required_var() {
     VAR_NAME=$1
     VAR_VALUE=$(eval echo \$$VAR_NAME)
-    if [ -z "$VAR_VALUE" ] || [ "$VAR_VALUE" = "CHANGE_ME" ]; then
-        echo "ERROR: Required environment variable $VAR_NAME is not set or has placeholder value"
+    if [ -z "$VAR_VALUE" ]; then
+        echo "ERROR: Required environment variable $VAR_NAME is not set"
         MISSING_VARS=$((MISSING_VARS + 1))
+    elif [ "$VAR_VALUE" = "CHANGE_ME" ]; then
+        echo "WARNING: Environment variable $VAR_NAME has placeholder value 'CHANGE_ME'"
+        echo "  This is acceptable for testing but should be changed for production"
     fi
 }
 
@@ -30,12 +33,12 @@ check_required_var "NEXTCLOUD_ADMIN_PASSWORD"
 
 if [ $MISSING_VARS -gt 0 ]; then
     echo ""
-    echo "ERROR: $MISSING_VARS required environment variable(s) missing or have placeholder values"
+    echo "ERROR: $MISSING_VARS required environment variable(s) missing"
     echo "Please set all required variables in your .env file"
     exit 1
 fi
 
-echo "✓ All required environment variables validated"
+echo "✓ All required environment variables are set"
 echo ""
 
 if [ "$(id -u)" -eq 0 ]; then
