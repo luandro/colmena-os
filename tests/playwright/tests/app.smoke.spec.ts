@@ -52,7 +52,6 @@ async function connectServer(page: import('@playwright/test').Page) {
   await connectItem.click();
   await page.waitForFunction(() => !!window.localStorage.getItem('serverId'));
   await page.waitForURL('**/auth/login', { timeout: 30_000 });
-  await page.waitForTimeout(1000);
 }
 
 async function login(page: import('@playwright/test').Page) {
