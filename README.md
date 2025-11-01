@@ -87,7 +87,32 @@ docker compose down --volumes
 docker compose -f docker-compose.yml -f docker-compose.local.yml down --volumes
 ```
 
-## Smoke Testing
+## Development Workflow
+
+### Running Code Against Infrastructure
+
+The `run-in-environment.sh` script provides a unified interface to run code (Python/JavaScript) against the live infrastructure:
+
+```bash
+# Run Django management commands
+./scripts/run-in-environment.sh backend manage.py showmigrations
+
+# Execute Python scripts against the live database
+./scripts/run-in-environment.sh backend scripts/analyze_data.py
+
+# Run arbitrary Python code
+./scripts/run-in-environment.sh backend python -c "from django.conf import settings; print(settings.DEBUG)"
+
+# Test infrastructure
+./scripts/run-in-environment.sh test infra
+
+# Drop into a shell
+./scripts/run-in-environment.sh shell
+```
+
+See [`docs/development/RUN-IN-ENVIRONMENT.md`](docs/development/RUN-IN-ENVIRONMENT.md) for comprehensive documentation and examples.
+
+### Smoke Testing
 
 `./scripts/run-playwright-smoke.sh` automates the full smoke loop:
 

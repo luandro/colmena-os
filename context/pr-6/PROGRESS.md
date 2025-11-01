@@ -48,6 +48,13 @@
 - **Changes**: Added clear documentation for SECRET_KEY vs COLMENA_SECRET_KEY
 - **Impact**: Prevents misconfiguration and weak secrets in production
 
+**✅ Issue #20 - Run Code Against Infrastructure** (COMPLETED)
+- **Priority**: 🟡 Medium (Development Experience)
+- **Status**: ✅ Implemented with scripts/run-in-environment.sh
+- **Changes**: Created unified script to run backend/frontend code against actual docker-compose infrastructure
+- **Impact**: Enables easy testing, debugging, and development against live infrastructure
+- **Documentation**: docs/development/RUN-IN-ENVIRONMENT.md
+
 ---
 
 ## 🚫 Excluded Issues (Submodule-Related)
@@ -125,10 +132,10 @@ These issues require changes to submodules (backend/frontend) and are excluded p
 
 ## 📊 Summary Statistics
 
-- **Total Issues**: 15
-- **Completed**: 6 (40%)
-- **Excluded (Submodule)**: 3 (20%)
-- **Remaining**: 6 (40%)
+- **Total Issues**: 16
+- **Completed**: 7 (44%)
+- **Excluded (Submodule)**: 3 (19%)
+- **Remaining**: 6 (37%)
   - Critical: 2
   - High: 2
   - Medium: 2
