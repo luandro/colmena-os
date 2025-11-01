@@ -7,10 +7,14 @@ See `context/pr-6/TRACKING.md` for detailed tracking of PR #6 issues.
 
 **Must Fix Before PR #6 Merge**:
 - Issue #5a: Reduce postgres max_connections from 10000 to 100-200
-- Issue #5b/5c: Add database connection retry logic and handle migration failures
 - Issue #8: Fix Unix socket permissions from 777 to 660
 
 ## Resolved Issues
+- **Issue #5b/5c**: Database connection retry and migration failure handling - RESOLVED ✅
+  - Added retry logic with exponential backoff (2s-30s, 5 retries) to postgres.py
+  - Added migration retry logic to start-backend.sh
+  - Handles PostgreSQL startup delays gracefully with clear logging
+  - See `context/issue-5b-5c-plan.md` and `context/issue-5b-5c-pr-comment.md`
 - **Issue #7**: OpenAPI schema generation failures - RESOLVED ✅
   - Added strict validation for backend schema, frontend schema.json, and runtime schema
   - Emergency TypeScript definitions stub prevents namespace errors
