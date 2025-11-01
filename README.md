@@ -114,19 +114,14 @@ The script expects the defaults from `.env.example`. If you override credentials
 
 The nginx configuration includes baseline security headers to protect against common web vulnerabilities:
 
-- **Content-Security-Policy** (CSP): Controls which resources the browser is allowed to load (configurable via `NGINX_CSP` env var)
+- **Content-Security-Policy** (CSP): Controls which resources the browser is allowed to load
 - **Strict-Transport-Security** (HSTS): Enforces HTTPS connections (max-age=31536000)
 - **X-Content-Type-Options**: Prevents MIME type sniffing attacks
 - **X-Frame-Options**: Protects against clickjacking (set to SAMEORIGIN)
 - **Referrer-Policy**: Controls referrer information sent with requests
 - **Permissions-Policy**: Restricts browser features like geolocation, microphone, and camera
 
-To customize the Content-Security-Policy, set the `NGINX_CSP` environment variable in your `.env` file. For example:
-
-```bash
-# Stricter CSP for production
-NGINX_CSP=default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:;
-```
+The default CSP is configured to work with the React frontend while maintaining security. To customize the Content-Security-Policy, you can override the nginx config by mounting a custom configuration in `docker/colmena-app-nginx.conf`.
 
 Verify headers are present:
 
