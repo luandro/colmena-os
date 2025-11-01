@@ -121,7 +121,7 @@ start_local() {
   service nginx start
   echo
   echo "======== Starting Local colmena ========"
-  exec $BIN -m gunicorn --timeout "$worker_timeout" --workers "$workers" --bind unix:/opt/app/app.sock -m 777 colmena.wsgi:application
+  exec $BIN -m gunicorn --timeout "$worker_timeout" --workers "$workers" --bind unix:/opt/app/app.sock -m 660 colmena.wsgi:application
 }
 
 case "$1" in

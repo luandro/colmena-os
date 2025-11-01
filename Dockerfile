@@ -139,7 +139,9 @@ RUN mkdir -p /opt/app/media /opt/app/static && \
     mkdir -p /var/log/supervisor
 
 # Create a dedicated non-root user for running the backend
-RUN addgroup -S colmena && adduser -S -G colmena -h /opt/app -s /sbin/nologin colmena
+# Also add nginx user to colmena group for Unix socket access (660 permissions)
+RUN addgroup -S colmena && adduser -S -G colmena -h /opt/app -s /sbin/nologin colmena && \
+    adduser nginx colmena
 
 # Copy Python environment and backend application
 COPY --from=backend-builder /usr/local /usr/local
