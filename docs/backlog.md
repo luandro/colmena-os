@@ -9,7 +9,13 @@ See `context/pr-6/TRACKING.md` for detailed tracking of PR #6 issues.
 - Issue #5a: Reduce postgres max_connections from 10000 to 100-200
 - Issue #5b/5c: Add database connection retry logic and handle migration failures
 - Issue #8: Fix Unix socket permissions from 777 to 660
-- Issue #7: OpenAPI schema generation failures (see `context/pr-6/issue-7-openapi-schema.md`)
+
+## Resolved Issues
+- **Issue #7**: OpenAPI schema generation failures - RESOLVED ✅
+  - Added strict validation for backend schema, frontend schema.json, and runtime schema
+  - Emergency TypeScript definitions stub prevents namespace errors
+  - Build fails immediately on invalid schemas with clear error messages
+  - See `context/issue-7-resolution.md` and `context/issue-7-review.md`
 
 ## Active Initiatives
 - Align CI workflows so `test-pipeline.yml` exercises the unified image and reports results alongside integration smoke tests.
