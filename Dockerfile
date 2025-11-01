@@ -38,7 +38,11 @@ RUN if [ -f manage.py ]; then \
     else \
       echo "No manage.py in backend; skipping schema generation" && exit 1; \
     fi
-RUN test -s /tmp/schema.json
+# Validate schema.json is not empty and has required OpenAPI structure
+RUN test -s /tmp/schema.json && \
+    jq -e '.openapi and .info and .paths' /tmp/schema.json > /dev/null && \
+    echo "✓ Backend schema validation passed" || \
+    (echo "✗ Invalid or incomplete backend schema.json" && exit 1)
 
 # ------------------------------
 # Stage 1: Frontend builder
@@ -50,7 +54,11 @@ COPY frontend/ ./
 # Copy generated backend schema into frontend (if available)
 RUN mkdir -p src/api src/api/utilities
 COPY --from=backend-schema /tmp/schema.json /app/frontend/src/api/schema.json
-RUN test -s src/api/schema.json
+# Validate that schema.json was copied successfully and is valid
+RUN test -s src/api/schema.json && \
+    jq -e '.openapi and .info and .paths' src/api/schema.json > /dev/null && \
+    echo "✓ Frontend schema.json validation passed" || \
+    (echo "✗ Invalid or missing frontend schema.json" && exit 1)
 
 # Disable Vite type-checker plugin to allow production build in container
 RUN if [ -f vite.config.ts ]; then \
@@ -62,8 +70,11 @@ RUN if [ -f package.json ]; then \
       npm ci --prefer-offline --no-audit --no-fund --ignore-scripts && \
       echo "Running frontend OpenAPI tasks (optimize + typegen)" && \
       npm run openapi-optimize && \
-      npm run openapi-typegen && \
       test -s src/api/utilities/schema-runtime.json && \
+      jq -e '.openapi and .info and .paths' src/api/utilities/schema-runtime.json > /dev/null && \
+      echo "✓ Frontend schema-runtime.json validation passed" && \
+      npm run openapi-typegen && \
+      test -f src/api/utilities/Definitions.d.ts && \
       npm run build; \
     else \
       echo "package.json missing; cannot build frontend" && exit 1; \
