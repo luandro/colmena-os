@@ -1,6 +1,15 @@
 # Backlog
 
-Last updated: 2025-10-28
+Last updated: 2025-11-01
+
+## Critical Issues (PR #6 Blockers)
+See `context/pr-6/TRACKING.md` for detailed tracking of PR #6 issues.
+
+**Must Fix Before PR #6 Merge**:
+- Issue #5a: Reduce postgres max_connections from 10000 to 100-200
+- Issue #5b/5c: Add database connection retry logic and handle migration failures
+- Issue #8: Fix Unix socket permissions from 777 to 660
+- Issue #7: OpenAPI schema generation failures (see `context/pr-6/issue-7-openapi-schema.md`)
 
 ## Active Initiatives
 - Align CI workflows so `test-pipeline.yml` exercises the unified image and reports results alongside integration smoke tests.
@@ -29,5 +38,29 @@ Last updated: 2025-10-28
 - Verify `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS` cover all deployment domains and local ports.
 - Document CORS/cookie expectations for HTTP (development) versus HTTPS (production).
 - Capture a secrets management guide covering `.env`, CasaOS overrides, and Balena fleet variables.
+
+## Documentation & Platform Alignment
+- **CasaOS Metadata Alignment**: The CasaOS runbook assumes an `x-casaos` metadata block in the compose file, but `docker-compose.yml` omits it. Decide whether to add CasaOS annotations to compose file or revise runbook. (_NEXT_STEPS Finding #1_)
+- **CasaOS Volume Naming**: CasaOS runbook volume names (`app_data`, `media_uploads`) differ from compose definitions (`media_data`, `static_data`). Reconcile documented volume list with compose file. (_NEXT_STEPS Finding #4_)
+- **Nextcloud Dockerfile Warning**: `colmena-devops/devops/apps/nextcloud/builder/Dockerfile` references `FROM nextcloud:$NEXTCLOUD_VERSION-apache` which BuildKit flags as invalid default tag. Add default value or use `${NEXTCLOUD_VERSION}` syntax. (_NEXT_STEPS Finding #9_)
+
+## Build Optimization
+- **Unused Dockerfile Stage**: The Dockerfile defines `frontend-builder-schema` stage (lines 152-175) that is not consumed in final image. Trace original intent and either wire it in or remove for simplification. (_NEXT_STEPS Finding #6_)
+- Optimize Docker build caching for faster pipelines (PR #6 Issue #15)
+- Remove TypeScript sed workaround once OpenAPI generation is fixed (PR #6 Issue #11)
+
+## Testing & Quality
+- Add backend unit tests to CI (PR #6 Issue #12)
+- Add container security scanning (Trivy/Grype/Snyk) to CI (PR #6 Issue #13)
+- Add API integration tests (PR #6 Issue #17)
+- Broaden test coverage: DB migration failures, network partitions, socket permissions, load/security testing (PR #6 Issue #18)
+
+## Infrastructure & Deployment
+- Remove Nextcloud `privileged: true`, use specific capabilities (PR #6 Issue #6)
+- Consolidate nginx configs - choose embedded vs mounted approach (PR #6 Issue #9)
+- Add nginx security headers (CSP, HSTS, etc.) (PR #6 Issue #10)
+- Add resource constraints to docker-compose.yml (PR #6 Issue #16)
+- Document `SECRET_KEY` vs `COLMENA_SECRET_KEY` responsibilities (PR #6 Issue #14)
+- Create architecture diagram for documentation (PR #6 Issue #19)
 
 See [`docs/20-roadmap.md`](docs/20-roadmap.md) for scheduled work and [`context/`](context) for scratch notes tied to future research.

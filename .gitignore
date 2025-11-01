@@ -50,7 +50,6 @@ tmp/
 temp/
 .marscode/
 .claude/
-pr-6/
 
 # CI/CD artifacts
 ci-results-*/
