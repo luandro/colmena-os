@@ -7,7 +7,7 @@ services:
   # Postgres (Database Service)
   postgres:
     image: postgres:13
-    command: postgres -c 'max_connections=10000'
+    command: postgres -c 'max_connections=${POSTGRES_MAX_CONNECTIONS:-200}'
     hostname: ${POSTGRES_HOSTNAME:-postgres}
     env_file:
       - .env
@@ -63,7 +63,8 @@ services:
         NEXTCLOUD_VERSION: ${NEXTCLOUD_VERSION:-28.0.3}
         NEXTCLOUD_API_WRAPPER_PORT: ${NEXTCLOUD_API_WRAPPER_PORT:-5001}
         APACHE_APP_PATH: ${APACHE_APP_PATH:-/var/www/nc_api_wrapper}
-    privileged: true
+    # Removed privileged mode for security (Issue #6)
+    # Add specific capabilities only if needed: cap_add: [CHOWN, SETUID, SETGID]
     networks:
       - colmena_devops
     volumes:
