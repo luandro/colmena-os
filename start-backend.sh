@@ -8,6 +8,39 @@ STATIC_ROOT=${STATIC_ROOT:-/opt/app/static}
 MEDIA_ROOT=${MEDIA_ROOT:-/opt/app/media}
 LOG_ROOT=${LOG_ROOT:-/opt/app/logs}
 
+# Retry configuration for database operations
+MAX_RETRIES=5
+INITIAL_DELAY=2  # seconds
+MAX_DELAY=30     # seconds
+
+# Function to run a command with retry logic
+run_with_retry() {
+    local cmd="$1"
+    local description="$2"
+    local delay=$INITIAL_DELAY
+
+    echo "======== $description ========"
+    echo "Command: $cmd"
+
+    for attempt in $(seq 1 $MAX_RETRIES); do
+        if eval "$cmd"; then
+            echo "✓ $description succeeded"
+            return 0
+        else
+            if [ $attempt -lt $MAX_RETRIES ]; then
+                echo "⚠ $description failed (attempt $attempt/$MAX_RETRIES)"
+                echo "Retrying in $delay seconds..."
+                sleep $delay
+                delay=$((delay * 2))
+                [ $delay -gt $MAX_DELAY ] && delay=$MAX_DELAY
+            else
+                echo "✗ $description failed after $MAX_RETRIES attempts"
+                return 1
+            fi
+        fi
+    done
+}
+
 # Validate required environment variables
 echo "Validating required environment variables..."
 MISSING_VARS=0
@@ -57,17 +90,18 @@ if [ "$(id -u)" -eq 0 ]; then
     chown -R colmena:colmena "$STATIC_ROOT"
 fi
 
-echo "======== Compiling translations ========"  
+echo "======== Compiling translations ========"
 $BIN ./manage.py compilemessages -l en -l es -i venv
 
 # Setup database (handle errors gracefully)
 echo "======== Database Setup ========"
-if ! $BIN ./bin/postgres.py CREATE; then
-    echo "Database already exists, continuing..."
+if ! run_with_retry "$BIN ./bin/postgres.py CREATE" "Database Creation"; then
+    echo "Database operation failed - database may not be ready"
+    echo "Continuing anyway (database might already exist)..."
 fi
 
-$BIN manage.py makemigrations --settings=$SETTINGS --check --dry-run
-$BIN manage.py migrate --settings=$SETTINGS
+run_with_retry "$BIN ./manage.py makemigrations --settings=$SETTINGS --check --dry-run" "Migration Check"
+run_with_retry "$BIN ./manage.py migrate --settings=$SETTINGS" "Database Migration"
 
 # Setup seeds (handle errors gracefully)
 echo "======== Installing seeds ========"
