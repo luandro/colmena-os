@@ -23,8 +23,8 @@ test.describe('DB Migration Failure Handling', () => {
     await expect(page.locator('body')).toBeVisible({ timeout: 60_000 });
 
     // Verify we can make API calls (backend is responsive)
-    const response = await page.request.get(`${apiBaseUrl}/health/`);
-    // Health endpoint should return 200 or 503 (if not fully ready)
+    const response = await page.request.get(`${apiBaseUrl}/schema/`);
+    // Schema endpoint should return 200 or 503 (if not fully ready)
     expect(response.status()).toBeGreaterThanOrEqual(200);
     expect(response.status()).toBeLessThan(600);
 
@@ -51,7 +51,7 @@ test.describe('DB Migration Failure Handling', () => {
     await expect(page.locator('body')).toBeVisible({ timeout: 120_000 });
 
     // Try to access an API endpoint that requires database connectivity
-    const response = await page.request.get(`${apiBaseUrl}/api/schema/`);
+    const response = await page.request.get(`${apiBaseUrl}/schema/`);
     expect(response.status()).toBeLessThan(500); // Should not be a server error
   });
 });

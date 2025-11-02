@@ -17,7 +17,7 @@ test.describe('Load Testing', () => {
     const promises = [];
     for (let i = 0; i < concurrentRequests; i++) {
       promises.push(
-        page.request.get(`${apiBaseUrl}/health/`).then(res => ({
+        page.request.get(`${apiBaseUrl}/schema/`).then(res => ({
           status: res.status(),
           duration: Date.now() - startTime,
           requestId: i
@@ -67,7 +67,7 @@ test.describe('Load Testing', () => {
 
     for (let i = 0; i < requestCount; i++) {
       const start = Date.now();
-      const response = await page.request.get(`${apiBaseUrl}/health/`);
+      const response = await page.request.get(`${apiBaseUrl}/schema/`);
       const duration = Date.now() - start;
 
       responseTimes.push(duration);
@@ -110,7 +110,7 @@ test.describe('Load Testing', () => {
 
     // Start making concurrent API requests
     const apiRequests = Array.from({ length: 5 }, (_, i) =>
-      page.request.get(`${apiBaseUrl}/health/`).then(res => ({ status: res.status(), id: i }))
+      page.request.get(`${apiBaseUrl}/schema/`).then(res => ({ status: res.status(), id: i }))
     );
 
     // Navigate the page while API requests are in flight

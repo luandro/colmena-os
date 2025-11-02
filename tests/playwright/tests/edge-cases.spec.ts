@@ -62,7 +62,7 @@ test.describe('Edge Cases and Volume Permissions', () => {
     await expect(page.locator('body')).toBeVisible({ timeout: 60_000 });
 
     // Check that API endpoints are accessible (not returning 500 errors)
-    const response = await page.request.get(`${apiBaseUrl}/api/schema/`);
+    const response = await page.request.get(`${apiBaseUrl}/schema/`);
     expect(response.status()).toBeLessThan(500); // No server errors
 
     // Verify we get a valid response (either 200 or 404 for specific endpoint)
@@ -81,7 +81,7 @@ test.describe('Edge Cases and Volume Permissions', () => {
     const promises = [];
     for (let i = 0; i < 5; i++) {
       promises.push(
-        page.request.get(`${apiBaseUrl}/health/`).then(res => ({
+        page.request.get(`${apiBaseUrl}/schema/`).then(res => ({
           status: res.status(),
           requestNumber: i
         }))
@@ -92,10 +92,17 @@ test.describe('Edge Cases and Volume Permissions', () => {
 
     const responses = await Promise.all(promises);
 
+    // Log failed requests for debugging (verbose output only for failures)
+    const failedRequests = responses.filter(r => r.status >= 400);
+    if (failedRequests.length > 0) {
+      failedRequests.forEach((res, idx) => {
+        console.log(`Request ${res.requestNumber}: HTTP ${res.status}`);
+      });
+    }
+
     // All requests should get valid HTTP responses
-    responses.forEach((res, idx) => {
+    responses.forEach((res) => {
       expect(res.status).toBeLessThan(600);
-      console.log(`Request ${idx + 1}: HTTP ${res.status}`);
     });
 
     // At least some requests should succeed
@@ -118,7 +125,7 @@ test.describe('Edge Cases and Volume Permissions', () => {
     // that the Unix socket communication (Issue #8) is working correctly
 
     // Try to trigger an API call that would use the socket
-    const response = await page.request.get(`${apiBaseUrl}/health/`);
+    const response = await page.request.get(`${apiBaseUrl}/schema/`);
 
     // If socket permissions were wrong (777 vs 660), we would get permission errors
     expect(response.status()).toBeLessThan(500);

@@ -19,7 +19,7 @@ test.describe('Network Partition Testing', () => {
 
     // Try to make API requests that would require database connectivity
     // These should either work (if DB is available) or fail gracefully
-    const healthResponse = await page.request.get(`${apiBaseUrl}/health/`);
+    const healthResponse = await page.request.get(`${apiBaseUrl}/schema/`);
 
     // We expect either:
     // - 200: Everything is healthy
@@ -50,7 +50,7 @@ test.describe('Network Partition Testing', () => {
 
     // Try multiple API calls to verify stability
     for (let i = 0; i < 3; i++) {
-      const response = await page.request.get(`${apiBaseUrl}/health/`);
+      const response = await page.request.get(`${apiBaseUrl}/schema/`);
       expect(response.status()).toBeLessThan(600); // Valid HTTP status
 
       // Add a small delay between requests
