@@ -19,7 +19,11 @@
 - Local workflow syntax validation via `act`.
 - `scripts/compose-smoke.sh` verifies container health and key HTTP endpoints before any push.
 - Playwright smoke suite (`tests/playwright`) exercises server onboarding, authentication, and core navigation against the running stack.
-- Security scans inherit from existing build jobs; keep Trivy/Grype in place when updating.
+- **Container Security Scanning**: Trivy vulnerability scanner runs in CI pipelines:
+  - PR validation: Scans local builds and reports vulnerabilities without blocking merges
+  - Production publish: Scans published images and blocks deployment on CRITICAL vulnerabilities
+  - SARIF reports uploaded to GitHub Security tab for visibility
+  - Severity filtering: CRITICAL and HIGH vulnerabilities tracked, CRITICAL blocks production
 
 ## Release Promotion
 - Draft images deploy automatically to the Balena test fleet.

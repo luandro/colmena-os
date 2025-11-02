@@ -5,6 +5,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  packages: write
+  security-events: write
+
 env:
   REGISTRY: docker.io
   IMAGE_NAME: communityfirst/colmena-app
@@ -167,10 +172,111 @@ jobs:
           docker compose down -v
           docker system prune -f
 
+  security-scan:
+    name: Container Security Scan (Production)
+    runs-on: ubuntu-latest
+    needs: [build-and-push]
+    steps:
+      - name: Checkout code (no submodules needed for scan)
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Install required tools
+        run: |
+          # Install jq for JSON parsing
+          sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Run unified Trivy vulnerability scan
+        id: trivy_scan
+        run: |
+          # Single Trivy scan with both JSON and SARIF outputs
+          echo "🔍 Scanning published image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+
+          # Generate JSON output for vulnerability counting
+          trivy image \
+            --format json \
+            --output trivy-output.json \
+            --severity CRITICAL,HIGH \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+          # Generate SARIF for GitHub Security tab
+          trivy image \
+            --format sarif \
+            --output trivy-results.sarif \
+            --severity CRITICAL,HIGH \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+          # Extract vulnerability counts
+          critical_count=$(jq -r '.Results[].Vulnerabilities[]? | select(.Severity == "CRITICAL") | .VulnerabilityID' trivy-output.json 2>/dev/null | wc -l)
+          high_count=$(jq -r '.Results[].Vulnerabilities[]? | select(.Severity == "HIGH") | .VulnerabilityID' trivy-output.json 2>/dev/null | wc -l)
+
+          # Store for later steps
+          echo "critical_count=$critical_count" >> $GITHUB_OUTPUT
+          echo "high_count=$high_count" >> $GITHUB_OUTPUT
+
+          echo "🔴 Critical vulnerabilities found: $critical_count"
+          echo "🟠 High vulnerabilities found: $high_count"
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: 'container-security-scan-production'
+
+      - name: Check for critical vulnerabilities (production gate)
+        run: |
+          critical_count="${{ steps.trivy_scan.outputs.critical_count }}"
+          high_count="${{ steps.trivy_scan.outputs.high_count }}"
+
+          # Fail if CRITICAL vulnerabilities exist (production blocker)
+          if [ "$critical_count" -gt 0 ]; then
+            echo "::error::Blocking production deployment - $critical_count CRITICAL vulnerabilities detected"
+            exit 1
+          fi
+
+          # Warn if HIGH vulnerabilities exist (non-blocking)
+          if [ "$high_count" -gt 0 ]; then
+            echo "::warning::$high_count HIGH severity vulnerabilities detected - review recommended before production use"
+          fi
+
+      - name: Security scan summary
+        if: always()
+        run: |
+          critical_count="${{ steps.trivy_scan.outputs.critical_count }}"
+          high_count="${{ steps.trivy_scan.outputs.high_count }}"
+
+          echo "# 🔒 Production Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Scan Target:** ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
+          echo "**Severity Filter:** CRITICAL, HIGH" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$critical_count" -eq 0 ] && [ "$high_count" -eq 0 ]; then
+            echo "**Status:** ✅ No vulnerabilities detected" >> $GITHUB_STEP_SUMMARY
+          elif [ "$critical_count" -eq 0 ]; then
+            echo "**Status:** ⚠️ $high_count HIGH vulnerabilities detected (non-blocking)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Status:** ❌ $critical_count CRITICAL vulnerabilities detected" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Gate Status:**" >> $GITHUB_STEP_SUMMARY
+          if [ "$critical_count" -eq 0 ]; then
+            echo "- ✅ CRITICAL gate: PASSED (0 found)" >> $GITHUB_STEP_SUMMARY
+            echo "- ℹ️ HIGH vulnerabilities: $high_count (informational)" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**✅ Safe for production deployment**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ❌ CRITICAL gate: FAILED ($critical_count found)" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**❌ DO NOT DEPLOY TO PRODUCTION**" >> $GITHUB_STEP_SUMMARY
+          fi
+
   publish-summary:
     name: Publish & Validate Summary
     runs-on: ubuntu-latest
-    needs: [build-and-push, validate-published]
+    needs: [build-and-push, validate-published, security-scan]
     if: always()
     steps:
       - name: Generate summary

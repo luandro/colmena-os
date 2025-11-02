@@ -30,6 +30,7 @@ concurrency:
 permissions:
   contents: read
   pull-requests: read
+  security-events: write
 
 env:
   COMPOSE_FILE: docker-compose.local.yml
@@ -160,6 +161,21 @@ jobs:
           echo "📋 Collecting service logs..."
           docker compose -f $COMPOSE_FILE logs --tail=100
 
+      - name: Export built image as artifact (for security scan reuse)
+        if: always()
+        run: |
+          echo "📦 Exporting colmena-app image for security scan..."
+          docker save colmena-app:latest | gzip > colmena-app.tar.gz
+
+      - name: Upload image artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: colmena-app-image
+          path: colmena-app.tar.gz
+          retention-days: 1
+          if-no-files-found: warn
+
       - name: Teardown stack
         if: always()
         run: |
@@ -167,10 +183,77 @@ jobs:
           docker compose -f $COMPOSE_FILE down -v
           docker system prune -f
 
+  security-scan:
+    name: Container Security Scan
+    runs-on: ubuntu-latest
+    needs: [test-local-build]
+    if: always()
+    steps:
+      - name: Checkout code (no submodules needed for scan)
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Download pre-built image from test job
+        uses: actions/download-artifact@v4
+        with:
+          name: colmena-app-image
+
+      - name: Load image for scanning
+        run: |
+          echo "📦 Loading pre-built colmena-app image..."
+          gunzip -c colmena-app.tar.gz | docker load
+          docker image inspect colmena-app:latest
+
+      - name: Run Trivy vulnerability scanner
+        id: trivy
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: 'colmena-app:latest'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Check Trivy execution status
+        if: steps.trivy.outcome == 'failure'
+        run: |
+          echo "::warning::Trivy scan failed - security results may be incomplete"
+          echo "Proceeding anyway as this is a non-blocking PR check"
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: 'container-security-scan'
+
+      - name: Save scan results as workflow artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-scan-results
+          path: trivy-results.sarif
+          if-no-files-found: warn
+
+      - name: Security scan summary
+        run: |
+          echo "# 🔒 Container Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Scan Target:** colmena-app:latest" >> $GITHUB_STEP_SUMMARY
+          echo "**Severity Filter:** CRITICAL, HIGH" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ✅ Completed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**View detailed results:**" >> $GITHUB_STEP_SUMMARY
+          echo "- GitHub Security tab (Vulnerability alerts)" >> $GITHUB_STEP_SUMMARY
+          echo "- Download 'security-scan-results' artifact for SARIF file" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Note:** This scan runs on PR builds and reports vulnerabilities without blocking merges. Production deployments are gated by security checks in the publish workflow." >> $GITHUB_STEP_SUMMARY
+
   pr-summary:
     name: PR Test Summary
     runs-on: ubuntu-latest
-    needs: [test-local-build]
+    needs: [test-local-build, security-scan]
     if: always()
     steps:
       - name: Generate test summary

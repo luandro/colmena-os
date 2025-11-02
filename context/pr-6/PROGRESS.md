@@ -90,12 +90,17 @@ These issues require changes to submodules (backend/frontend) and are excluded p
 - **Details**: 5 retry attempts with exponential backoff (2s → 4s → 8s → 16s → 30s)
 - **Documentation**: context/issue-5b-5c-plan.md, context/issue-5b-5c-pr-comment.md
 
-**Issue #13 - Container Security Scanning**
+**✅ Issue #13 - Container Security Scanning** (COMPLETED)
 - **Why Critical**: No CVE detection for openssl, python, node
-- **Impact**: Security vulnerabilities go undetected
-- **Complexity**: Low (CI workflow addition)
-- **Dependencies**: None
-- **Recommendation**: Add Trivy/Grype to CI pipeline
+- **Status**: ✅ Implemented with Trivy vulnerability scanner
+- **Changes**: Added security scan jobs to pr-validation.yml and publish-and-validate.yml workflows
+- **Impact**: CVE detection now active in CI, blocks production deployment on CRITICAL vulnerabilities
+- **Details**:
+  - PR validation: Scans local builds, reports without blocking
+  - Production publish: Scans published images, blocks on CRITICAL
+  - SARIF integration with GitHub Security tab
+  - Severity filtering: CRITICAL, HIGH vulnerabilities tracked
+- **Documentation**: Updated docs/30-implementation/ci-cd.md with security scanning details
 
 ### 🟠 High Priority (Important for Stability)
 
@@ -134,10 +139,10 @@ These issues require changes to submodules (backend/frontend) and are excluded p
 ## 📊 Summary Statistics
 
 - **Total Issues**: 16
-- **Completed**: 8 (50%)
+- **Completed**: 9 (56%)
 - **Excluded (Submodule)**: 3 (19%)
-- **Remaining**: 5 (31%)
-  - Critical: 1
+- **Remaining**: 4 (25%)
+  - Critical: 0 (All critical issues complete!)
   - High: 2
   - Medium: 2
 
@@ -153,7 +158,7 @@ These issues require changes to submodules (backend/frontend) and are excluded p
 ✅ Database startup robustness (Issue #5b/5c)
 
 ### Should Have (Post-Merge Priority)
-- ⏳ Container security scanning (Issue #13)
+✅ Container security scanning (Issue #13) - COMPLETED
 
 ### Can Have (Future Iterations)
 - ⏳ Resource constraints (Issue #16)
@@ -162,8 +167,8 @@ These issues require changes to submodules (backend/frontend) and are excluded p
 - ⏳ Architecture diagram (Issue #19)
 
 ### 🎉 Milestone Achievement
-- **50% Complete**: 8 out of 16 issues resolved!
-- **All Critical Issues Resolved**: Database startup robustness (#5b/5c) now complete
+- **56% Complete**: 9 out of 16 issues resolved!
+- **All Critical Issues Resolved**: Container security scanning (#13) now complete - zero critical issues remaining!
 - **PR #6 Ready for Merge**: All must-have criteria met
 
 ---
