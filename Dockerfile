@@ -50,14 +50,11 @@ RUN test -s /tmp/schema.json && \
 # ------------------------------
 FROM node:20-alpine AS frontend-builder
 WORKDIR /app/frontend
-# Create directory structure before copying files
-RUN mkdir -p src/api src/api/utilities
-# Copy generated backend schema into frontend (if available)
-# Use relative path from WORKDIR
-COPY --from=backend-schema /tmp/schema.json src/api/schema.json
 # Always copy the directory (may be empty when submodule isn't checked out)
-# This happens AFTER schema copy to avoid overwriting
 COPY frontend/ ./
+# Copy generated backend schema into frontend (if available)
+RUN mkdir -p src/api src/api/utilities
+COPY --from=backend-schema /tmp/schema.json /app/frontend/src/api/schema.json
 
 # Disable Vite type-checker plugin to allow production build in container
 RUN if [ -f vite.config.ts ]; then \
