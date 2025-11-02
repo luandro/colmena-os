@@ -128,15 +128,22 @@ if [ "$(id -u)" -eq 0 ]; then
     chown -R colmena:colmena "$MEDIA_ROOT" "$LOG_ROOT"
 fi
 
-# Create superadmin (handle duplicate gracefully)
+# Create superadmin (handle Nextcloud dependency with retry)
 echo "======== Create Superadmin ========"
 if [ -n "$SUPERADMIN_EMAIL" ] && [ -n "$SUPERADMIN_PASSWORD" ] && [ -n "$NEXTCLOUD_ADMIN_USER" ] && [ -n "$NEXTCLOUD_ADMIN_PASSWORD" ]; then
-    if ! $BIN manage.py create_superadmin \
+    SUPERADMIN_CMD="$BIN manage.py create_superadmin \
         $SUPERADMIN_EMAIL \
         $SUPERADMIN_PASSWORD \
         $NEXTCLOUD_ADMIN_USER \
-        $NEXTCLOUD_ADMIN_PASSWORD; then
-        echo "Superadmin already exists, continuing..."
+        $NEXTCLOUD_ADMIN_PASSWORD"
+
+    if run_with_retry "$SUPERADMIN_CMD" "Superadmin Creation"; then
+        echo "✓ Superadmin user created successfully"
+    else
+        echo "✗ Failed to create superadmin after $MAX_RETRIES attempts"
+        echo "  This may be because Nextcloud is not responding"
+        echo "  Please check Nextcloud service and try again"
+        exit 1
     fi
 fi
 

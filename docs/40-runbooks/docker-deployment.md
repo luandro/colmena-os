@@ -61,6 +61,19 @@ Use `scripts/cleanup-local-ports.sh` (with `FORCE=1` to kill conflicts) if ports
 
 For scripted startup without health verification, `scripts/up-local.sh` simply builds and starts the stack; complement it with `scripts/test-compose-local.sh` for smoke tests.
 
+## Startup Behavior
+
+The `colmena-app` container uses `start-backend.sh` which performs the following initialization steps:
+
+1. **Database Setup** — Creates and migrates the PostgreSQL database with retry logic
+2. **Seed Data** — Loads initial groups, permissions, languages, and regions
+3. **Superadmin Creation** — Creates the superadmin user with Nextcloud app password
+   - Uses exponential backoff retry (5 attempts, 2-30s delay)
+   - Requires valid `NEXTCLOUD_ADMIN_PASSWORD` in `.env`
+   - Logs success/failure explicitly to help with troubleshooting
+
+If superadmin creation fails after retries, the container will exit with an error to prevent running without a superadmin user.
+
 ## Environment Checklist
 
 - **Database:** `POSTGRES_PASSWORD`, `POSTGRES_USER`, `POSTGRES_DB`
