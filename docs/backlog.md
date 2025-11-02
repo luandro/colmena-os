@@ -1,6 +1,6 @@
 # Backlog
 
-Last updated: 2025-11-01
+Last updated: 2025-11-02
 
 ## Critical Issues (PR #6 Blockers)
 See `context/pr-6/TRACKING.md` for detailed tracking of PR #6 issues.
@@ -20,6 +20,13 @@ See `context/pr-6/TRACKING.md` for detailed tracking of PR #6 issues.
   - Emergency TypeScript definitions stub prevents namespace errors
   - Build fails immediately on invalid schemas with clear error messages
   - See `context/issue-7-resolution.md` and `context/issue-7-review.md`
+- **Issue #18**: Broaden test coverage (DB failures, network partitions, etc.) - RESOLVED ✅
+  - Added 4 new Playwright test files with 13 additional tests
+  - DB migration failure handling tests (2 tests)
+  - Network partition scenario tests (3 tests)
+  - Volume permission and edge case tests (5 tests)
+  - Load testing framework (3 tests)
+  - See `context/issue-18-plan.md` for full documentation
 
 ## Active Initiatives
 - Align CI workflows so `test-pipeline.yml` exercises the unified image and reports results alongside integration smoke tests.
@@ -60,10 +67,10 @@ See `context/pr-6/TRACKING.md` for detailed tracking of PR #6 issues.
 - Remove TypeScript sed workaround once OpenAPI generation is fixed (PR #6 Issue #11)
 
 ## Testing & Quality
-- Add backend unit tests to CI (PR #6 Issue #12)
-- Add container security scanning (Trivy/Grype/Snyk) to CI (PR #6 Issue #13)
-- Add API integration tests (PR #6 Issue #17)
-- Broaden test coverage: DB migration failures, network partitions, socket permissions, load/security testing (PR #6 Issue #18)
+- Add backend unit tests to CI (PR #6 Issue #12) - Excluded (submodule-related)
+- Add container security scanning (Trivy/Grype/Snyk) to CI (PR #6 Issue #13) - RESOLVED ✅
+- Add API integration tests (PR #6 Issue #17) - Excluded (submodule-related)
+- Broaden test coverage: DB migration failures, network partitions, socket permissions, load/security testing (PR #6 Issue #18) - RESOLVED ✅
 
 ## Infrastructure & Deployment
 - Remove Nextcloud `privileged: true`, use specific capabilities (PR #6 Issue #6)
