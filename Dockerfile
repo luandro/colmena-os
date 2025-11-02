@@ -18,7 +18,8 @@ RUN apk add --no-cache \
     zlib-dev \
     cargo \
     git \
-    gettext
+    gettext \
+    jq
 COPY backend/ ./
 RUN if [ -f requirements/prod.txt ]; then \
       pip install -U pip setuptools wheel && \
@@ -99,7 +100,8 @@ RUN apk add --no-cache \
     zlib-dev \
     cargo \
     git \
-    gettext
+    gettext \
+    jq
 
 # Copy backend source (may be empty when submodule isn't checked out)
 COPY backend/ ./
