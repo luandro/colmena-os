@@ -60,7 +60,8 @@ async function login(page: import('@playwright/test').Page) {
   await expect(page.locator('#sign_in_up_submit_button')).toBeEnabled({ timeout: 10_000 });
   await page.click('#sign_in_up_submit_button');
   await page.waitForURL(/.*(user\/welcome|teams|home|dashboard).*/, { timeout: 60_000 });
-  await page.waitForTimeout(2000);
+  // Wait for authentication state to be established
+  await page.waitForLoadState('networkidle', { timeout: 10_000 });
   await page.waitForFunction(() => !!window.localStorage.getItem('user'));
 }
 
