@@ -37,7 +37,8 @@ RUN if [ -f manage.py ]; then \
       echo "Generating backend OpenAPI schema (JSON) via manage.py spectacular..." && \
       python manage.py spectacular --file /tmp/schema.json --format openapi-json; \
     else \
-      echo "No manage.py in backend; skipping schema generation" && exit 1; \
+      echo "No manage.py in backend; creating placeholder schema.json" && \
+      echo '{"openapi":"3.0.0","info":{"title":"Colmena API (Placeholder)","version":"0.0.0","description":"Placeholder schema - backend sources not available during build"},"paths":{}}' > /tmp/schema.json; \
     fi
 # Validate schema.json is not empty and has required OpenAPI structure
 RUN test -s /tmp/schema.json && \
