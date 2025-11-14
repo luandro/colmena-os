@@ -195,11 +195,29 @@ jobs:
           submodules: false
 
       - name: Download pre-built image from test job
+        id: download-image
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: colmena-app-image
 
+      - name: Skip scan when artifact is missing
+        if: steps.download-image.outcome == 'failure'
+        run: |
+          echo "::warning::colmena-app-image artifact is unavailable (test-local-build result: ${{ needs.test-local-build.result }})."
+          echo "::warning::Skipping container security scan for this run."
+          {
+            echo "# 🔒 Container Security Scan Results";
+            echo "";
+            echo "**Scan Target:** colmena-app:latest";
+            echo "**Status:** ⚠️ Skipped";
+            echo "";
+            echo "Security scan needs the image exported in test-local-build (lines 164-177).";
+            echo "When that job is skipped or fails early, there is no artifact to scan.";
+          } >> $GITHUB_STEP_SUMMARY
+
       - name: Load image for scanning
+        if: steps.download-image.outcome == 'success'
         run: |
           echo "📦 Loading pre-built colmena-app image..."
           gunzip -c colmena-app.tar.gz | docker load
@@ -207,6 +225,7 @@ jobs:
 
       - name: Run Trivy vulnerability scanner
         id: trivy
+        if: steps.download-image.outcome == 'success'
         continue-on-error: true
         uses: aquasecurity/trivy-action@0.28.0
         with:
@@ -216,20 +235,20 @@ jobs:
           severity: 'CRITICAL,HIGH'
 
       - name: Check Trivy execution status
-        if: steps.trivy.outcome == 'failure'
+        if: steps.download-image.outcome == 'success' && steps.trivy.outcome == 'failure'
         run: |
           echo "::warning::Trivy scan failed - security results may be incomplete"
           echo "Proceeding anyway as this is a non-blocking PR check"
 
       - name: Upload Trivy scan results to GitHub Security tab
-        if: always()
+        if: steps.download-image.outcome == 'success'
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'
           category: 'container-security-scan'
 
       - name: Save scan results as workflow artifact
-        if: always()
+        if: steps.download-image.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: security-scan-results
@@ -237,6 +256,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Security scan summary
+        if: steps.download-image.outcome == 'success'
         run: |
           echo "# 🔒 Container Security Scan Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
