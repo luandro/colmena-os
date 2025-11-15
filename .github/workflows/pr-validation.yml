@@ -76,9 +76,12 @@ jobs:
           docker buildx bake -f "$COMPOSE_FILE" colmena-app \
             --load \
             --set '*.cache-from=type=local,src=/tmp/.buildx-cache' \
-            --set '*.cache-to=type=local,dest=/tmp/.buildx-cache-new'
-          rm -rf /tmp/.buildx-cache
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+            --set '*.cache-to=type=local,dest=/tmp/.buildx-cache-new' && \
+          (
+            echo "✅ Cache export succeeded; refreshing local cache."
+            rm -rf /tmp/.buildx-cache
+            mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+          )
 
       - name: Run compose smoke test
         run: |

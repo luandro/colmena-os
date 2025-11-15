@@ -30,6 +30,8 @@ tests/test-results/
 tests/screenshots/
 tests/droplets.json
 /tmp/act-artifacts/
+REPORT.md
+smoke-report.md
 
 # GitHub Actions local testing
 .secrets

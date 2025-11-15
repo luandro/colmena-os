@@ -32,9 +32,9 @@ read_env() {
   local key="$1" default="$2" value
   if [[ -f .env ]]; then
     value=$(grep -E "^${key}=" .env | head -n1 | cut -d'=' -f2- || true)
-    # Trim surrounding quotes
-    value=${value%""}
-    value=${value#""}
+    # Trim surrounding double quotes
+    value=${value#\"}
+    value=${value%\"}
   fi
   printf "%s" "${value:-$default}"
 }

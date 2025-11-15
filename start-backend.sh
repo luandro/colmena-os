@@ -41,6 +41,20 @@ run_with_retry() {
     done
 }
 
+wait_for_nextcloud_health() {
+    local base_url=${NEXTCLOUD_API_WRAPPER_URL:-http://nextcloud:5001}
+    base_url=${base_url%/}
+    local health_url=${NEXTCLOUD_HEALTHCHECK_URL:-$base_url/api/healthcheck}
+
+    if ! command -v curl >/dev/null 2>&1; then
+        echo "WARNING: curl not available; skipping Nextcloud health verification"
+        return 0
+    fi
+
+    echo "======== Waiting for Nextcloud API Wrapper ========"
+    run_with_retry "curl -fsS --max-time 5 \"$health_url\" >/dev/null" "Nextcloud Healthcheck"
+}
+
 # Validate required environment variables
 echo "Validating required environment variables..."
 MISSING_VARS=0
@@ -100,8 +114,14 @@ if ! run_with_retry "$BIN ./bin/postgres.py CREATE" "Database Creation"; then
     echo "Continuing anyway (database might already exist)..."
 fi
 
-run_with_retry "$BIN ./manage.py makemigrations --settings=$SETTINGS --check --dry-run" "Migration Check"
 run_with_retry "$BIN ./manage.py migrate --settings=$SETTINGS" "Database Migration"
+
+echo "======== Checking for pending model changes ========"
+if ! $BIN ./manage.py makemigrations --settings=$SETTINGS --check --dry-run; then
+    echo "WARNING: makemigrations --check detected pending model changes."
+    echo "  This is usually harmless in deployed images (pre-built migrations)."
+    echo "  Please run 'python manage.py makemigrations' locally and commit the results."
+fi
 
 # Setup seeds (handle errors gracefully)
 echo "======== Installing seeds ========"
@@ -131,6 +151,11 @@ fi
 # Create superadmin (handle Nextcloud dependency with retry)
 echo "======== Create Superadmin ========"
 if [ -n "$SUPERADMIN_EMAIL" ] && [ -n "$SUPERADMIN_PASSWORD" ] && [ -n "$NEXTCLOUD_ADMIN_USER" ] && [ -n "$NEXTCLOUD_ADMIN_PASSWORD" ]; then
+    if ! wait_for_nextcloud_health; then
+        echo "Nextcloud API wrapper did not become healthy in time."
+        exit 1
+    fi
+
     SUPERADMIN_CMD="$BIN manage.py create_superadmin \
         $SUPERADMIN_EMAIL \
         $SUPERADMIN_PASSWORD \

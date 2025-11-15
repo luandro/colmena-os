@@ -6,7 +6,10 @@ services:
   # Postgres (Database Service)
   postgres:
     image: postgres:13
-    command: postgres -c 'max_connections=${POSTGRES_MAX_CONNECTIONS:-200}'
+    command:
+      - postgres
+      - -c
+      - "max_connections=${POSTGRES_MAX_CONNECTIONS:-200}"
     hostname: ${POSTGRES_HOSTNAME:-postgres}
     env_file:
       - .env

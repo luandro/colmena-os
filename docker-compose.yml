@@ -7,7 +7,12 @@ services:
   # Postgres (Database Service)
   postgres:
     image: postgres:13
-    command: postgres -c 'max_connections=${POSTGRES_MAX_CONNECTIONS:-200}'
+    # Keep Postgres connections modest (200 for dev, <500 for prod) to avoid >10GB RAM usage.
+    # Override via POSTGRES_MAX_CONNECTIONS when coupled with PgBouncer or similar pooling.
+    command:
+      - postgres
+      - -c
+      - "max_connections=${POSTGRES_MAX_CONNECTIONS:-200}"
     hostname: ${POSTGRES_HOSTNAME:-postgres}
     env_file:
       - .env

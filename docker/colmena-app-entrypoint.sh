@@ -15,6 +15,38 @@ set -eu
 
 SETTINGS=colmena.settings.prod
 BIN=python
+DEFAULT_SOCKET_PATH=${GUNICORN_SOCKET_PATH:-/opt/app/app.sock}
+DEFAULT_SOCKET_GROUP=${GUNICORN_SOCKET_GROUP:-colmena}
+
+prepare_socket_path() {
+  local socket_path=$1
+  local socket_group=$2
+  local socket_dir
+
+  socket_dir=$(dirname "$socket_path")
+  mkdir -p "$socket_dir"
+  chmod 770 "$socket_dir" 2>/dev/null || true
+  chgrp "$socket_group" "$socket_dir" 2>/dev/null || true
+}
+
+ensure_socket_permissions() {
+  local socket_path=$1
+  local socket_group=$2
+
+  (
+    attempts=0
+    while [ $attempts -lt 30 ]; do
+      if [ -S "$socket_path" ]; then
+        chgrp "$socket_group" "$socket_path" 2>/dev/null || true
+        chmod 660 "$socket_path" 2>/dev/null || true
+        exit 0
+      fi
+      sleep 1
+      attempts=$((attempts + 1))
+    done
+    echo "WARNING: Failed to secure socket permissions for $socket_path" >&2
+  ) &
+}
 
 create_db() {
   set -e
@@ -105,6 +137,8 @@ start_local() {
 
   local worker_timeout=${GUNICORN_WORKER_TIMEOUT:-120}
   local workers=${GUNICORN_WORKERS:-3}
+  local socket_path=${GUNICORN_SOCKET_PATH:-$DEFAULT_SOCKET_PATH}
+  local socket_group=${GUNICORN_SOCKET_GROUP:-$DEFAULT_SOCKET_GROUP}
 
   echo
   echo "Starting local instance"
@@ -121,7 +155,10 @@ start_local() {
   service nginx start
   echo
   echo "======== Starting Local colmena ========"
-  exec $BIN -m gunicorn --timeout "$worker_timeout" --workers "$workers" --bind unix:/opt/app/app.sock -m 660 colmena.wsgi:application
+  prepare_socket_path "$socket_path" "$socket_group"
+  ensure_socket_permissions "$socket_path" "$socket_group"
+  umask 006
+  exec $BIN -m gunicorn --timeout "$worker_timeout" --workers "$workers" --bind "unix:$socket_path" colmena.wsgi:application
 }
 
 case "$1" in

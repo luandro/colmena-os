@@ -206,7 +206,7 @@ EXPOSE 80 8000
 
 # Health check: ensure both nginx and backend respond
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-  CMD sh -c 'curl -fsS http://127.0.0.1/ >/dev/null && (curl -fsS http://127.0.0.1:8000/api/schema >/dev/null || curl -fsS http://127.0.0.1:8000/ >/dev/null) || exit 1'
+  CMD curl -fsS http://127.0.0.1/ >/dev/null && curl -fsS http://127.0.0.1:8000/api/schema/ >/dev/null
 
 # Start supervisor
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

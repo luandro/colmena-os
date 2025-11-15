@@ -179,7 +179,7 @@ def main():
     results.append(("Database Connection", check_database_connection()))
     results.append(("Django Models", check_django_models()))
     results.append(("Environment Variables", check_environment_variables()))
-    results.append(("Django ORM", test_django_ORM()))
+    results.append(("Django ORM", test_django_orm()))
 
     # Run custom code example
     run_custom_code()
