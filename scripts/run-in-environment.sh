@@ -87,11 +87,26 @@ check_ports() {
     local http_port=${HTTP_PORT:-$DEFAULT_HTTP_PORT}
     local backend_port=${BACKEND_PORT:-$DEFAULT_BACKEND_PORT}
     local postgres_port=${POSTGRES_HOST_PORT:-$DEFAULT_POSTGRES_PORT}
+    local conflict_found=false
 
     log_info "Checking if ports are available..."
 
     if lsof -Pi :$http_port -sTCP:LISTEN -t >/dev/null 2>&1; then
-        log_warning "Port $http_port is already in use"
+        log_warning "HTTP port $http_port is already in use"
+        conflict_found=true
+    fi
+
+    if lsof -Pi :$backend_port -sTCP:LISTEN -t >/dev/null 2>&1; then
+        log_warning "Backend port $backend_port is already in use"
+        conflict_found=true
+    fi
+
+    if lsof -Pi :$postgres_port -sTCP:LISTEN -t >/dev/null 2>&1; then
+        log_warning "Postgres port $postgres_port is already in use"
+        conflict_found=true
+    fi
+
+    if [[ "$conflict_found" == true ]]; then
         read -p "  Try to use different ports? (y/n) " -n 1 -r
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
