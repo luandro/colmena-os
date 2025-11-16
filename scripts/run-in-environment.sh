@@ -219,8 +219,22 @@ run_backend() {
     # Ensure stack is up
     bring_up_stack "" "--keep-up"
 
-    # Run command in the colmena-app container
-    docker compose "${COMPOSE_FILES[@]}" exec -T colmena-app "$@"
+    if [[ $# -eq 0 ]]; then
+        log_error "No backend command provided"
+        exit 1
+    fi
+
+    local cmd=("$@")
+
+    # Automatically run manage.py via python for convenience (matches docs)
+    if [[ ${cmd[0]} == "manage.py" ]]; then
+        cmd=(python manage.py "${cmd[@]:1}")
+    fi
+
+    # Run command inside /opt/app so relative paths (scripts/, etc.) resolve
+    local quoted_cmd
+    quoted_cmd=$(printf ' %q' "${cmd[@]}")
+    docker compose "${COMPOSE_FILES[@]}" exec -T colmena-app sh -c "cd /opt/app &&${quoted_cmd}"
 }
 
 # Run frontend command
