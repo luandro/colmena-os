@@ -94,11 +94,11 @@ run_local_tests() {
         ((failed_tests++))
     fi
     
-    log_info "Testing build preparation..."
-    if ACT_DRY_RUN=true "$LOCAL_TEST_SCRIPT" test-workflow build-unified; then
-        log_success "Build workflow test passed"
+    log_info "Testing publish-and-validate workflow..."
+    if ACT_DRY_RUN=true "$LOCAL_TEST_SCRIPT" test-workflow publish-and-validate; then
+        log_success "Publish-and-validate workflow test passed"
     else
-        log_error "Build workflow test failed"
+        log_error "Publish-and-validate workflow test failed"
         ((failed_tests++))
     fi
     
