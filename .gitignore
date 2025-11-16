@@ -78,6 +78,7 @@ htmlcov/
 playwright-report/
 test-results/
 tests/playwright/ms-playwright/
+tests/playwright/.playwright-deps-installed
 
 # Node.js dependencies
 node_modules/
