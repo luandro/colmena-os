@@ -32,10 +32,10 @@ PLAYWRIGHT_DIR="$ROOT_DIR/tests/playwright"
 export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$PLAYWRIGHT_DIR/ms-playwright}"
 
 echo "[playwright-smoke] Installing Playwright dependencies..."
-(cd "$PLAYWRIGHT_DIR" && npm install --silent)
+(cd "$PLAYWRIGHT_DIR" && npm ci --no-audit --no-fund --prefer-offline)
 
 echo "[playwright-smoke] Ensuring Playwright browsers are installed..."
-(cd "$PLAYWRIGHT_DIR" && npx playwright install)
+(cd "$PLAYWRIGHT_DIR" && npx playwright install --with-deps)
 
 echo "[playwright-smoke] Running Playwright smoke suite..."
 (cd "$PLAYWRIGHT_DIR" && npm run test -- "$@")

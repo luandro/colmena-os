@@ -89,7 +89,7 @@ jobs:
           PLAYWRIGHT_BASE_URL: ${{ env.PLAYWRIGHT_BASE_URL }}
           PLAYWRIGHT_API_BASE_URL: ${{ env.PLAYWRIGHT_API_BASE_URL }}
           PLAYWRIGHT_SUPERADMIN_EMAIL: ${{ env.SUPERADMIN_EMAIL }}
-          PLAYWRIGHT_SUPERADMIN_PASSWORD: ${{ secrets.SUPERADMIN_PASSWORD || env.SUPERADMIN_PASSWORD }}
+          PLAYWRIGHT_SUPERADMIN_PASSWORD: ${{ secrets.SUPERADMIN_PASSWORD }}
 
       - name: Upload compose smoke report
         if: always()

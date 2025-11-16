@@ -95,5 +95,5 @@ $BIN manage.py migrate --settings=$SETTINGS
 ## Testing Recommendations
 To test this implementation:
 1. Start PostgreSQL with a delay: `docker compose up -d postgres && sleep 60 && docker compose up -d colmena-app`
-2. Observe retry logs incolmena-app container
+2. Observe retry logs in colmena-app container
 3. Verify migrations complete successfully after retries

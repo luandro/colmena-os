@@ -8,6 +8,17 @@ STATIC_ROOT=${STATIC_ROOT:-/opt/app/static}
 MEDIA_ROOT=${MEDIA_ROOT:-/opt/app/media}
 LOG_ROOT=${LOG_ROOT:-/opt/app/logs}
 
+# Provide safe defaults for optional env vars so `set -u` does not abort when they
+# are intentionally omitted in local testing scenarios.
+SUPERADMIN_EMAIL=${SUPERADMIN_EMAIL:-}
+SUPERADMIN_PASSWORD=${SUPERADMIN_PASSWORD:-}
+SECRET_KEY=${SECRET_KEY:-}
+POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-}
+NEXTCLOUD_ADMIN_PASSWORD=${NEXTCLOUD_ADMIN_PASSWORD:-}
+NEXTCLOUD_ADMIN_USER=${NEXTCLOUD_ADMIN_USER:-}
+BACKEND_HOSTNAME=${BACKEND_HOSTNAME:-}
+FRONTEND_HOSTNAME=${FRONTEND_HOSTNAME:-}
+
 # Retry configuration for database operations
 MAX_RETRIES=5
 INITIAL_DELAY=2  # seconds

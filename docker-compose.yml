@@ -133,11 +133,11 @@ services:
       - STAGE=prod
       - DATABASE_URL=postgresql://${POSTGRES_USER:-colmena}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-colmena}
       - SECRET_KEY=${SECRET_KEY}
-      - COLMENA_SECRET_KEY=${COLMENA_SECRET_KEY:-insecure-ci-secret}
+      - COLMENA_SECRET_KEY=${COLMENA_SECRET_KEY}
       - DEBUG=${DEBUG:-false}
-      - ALLOWED_HOSTS=localhost,127.0.0.1,*.local,*
-      - CSRF_TRUSTED_ORIGINS=http://localhost:${HTTP_PORT:-7180}
-      - "CORS_ALLOWED_ORIGINS=http://localhost:${HTTP_PORT:-7180},http://127.0.0.1:${HTTP_PORT:-7180},http://localhost:3000,http://127.0.0.1:3000"
+      - "ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1,*.local}"
+      - "CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS:-http://localhost:${HTTP_PORT:-7180}}"
+      - "CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:${HTTP_PORT:-7180},http://127.0.0.1:${HTTP_PORT:-7180},http://localhost:3000,http://127.0.0.1:3000}"
       - POSTGRES_DATABASE=${POSTGRES_DB:-colmena}
       - POSTGRES_USERNAME=${POSTGRES_USER:-colmena}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}

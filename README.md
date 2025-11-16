@@ -153,6 +153,7 @@ Verify headers are present:
 ```bash
 curl -I localhost:7180 | grep -i "content-security-policy"
 curl -I localhost:7180 | grep -i "strict-transport"
+```
 
 ### Backend Scripts
 

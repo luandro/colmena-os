@@ -2,8 +2,16 @@ import { expect, test } from '@playwright/test';
 
 const serverName = process.env.PLAYWRIGHT_SERVER_NAME || 'Local API';
 const apiBaseUrl = process.env.PLAYWRIGHT_API_BASE_URL || 'http://127.0.0.1:7100/api';
-const superadminEmail = process.env.PLAYWRIGHT_SUPERADMIN_EMAIL || 'admin@example.com';
-const superadminPassword = process.env.PLAYWRIGHT_SUPERADMIN_PASSWORD || 'CHANGE_ME';
+const superadminEmail = process.env.PLAYWRIGHT_SUPERADMIN_EMAIL || process.env.SUPERADMIN_EMAIL || 'admin@example.com';
+const superadminPassword = (() => {
+  const value = process.env.PLAYWRIGHT_SUPERADMIN_PASSWORD || process.env.SUPERADMIN_PASSWORD;
+  if (!value) {
+    throw new Error(
+      'PLAYWRIGHT_SUPERADMIN_PASSWORD (or SUPERADMIN_PASSWORD) must be set before running the smoke suite.',
+    );
+  }
+  return value;
+})();
 
 const serverAddress = (() => {
   const envAddress = process.env.PLAYWRIGHT_SERVER_ADDRESS;

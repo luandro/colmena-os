@@ -20,6 +20,9 @@ This guide covers provisioning a Balena fleet, pushing the unified ColmenaOS ima
 ## 2. Configure Fleet Variables
 Balena injects environment variables at the fleet level. Set the critical ones before deploying:
 
+> ⚠️ **Never** keep the illustrative values below (e.g., `change_me`, `secure_db_password`).
+> Generate strong, unique secrets for every fleet before running these commands.
+
 ```bash
 balena env add SECRET_KEY "your-50-char-secret" --fleet colmena-prod
 balena env add SUPERADMIN_EMAIL "admin@colmena.org" --fleet colmena-prod

@@ -130,7 +130,6 @@ docker build -t colmena-app .
 
 ---
 
-**Resolution Date**: 2025-11-01  
+**Resolution Date**: 2025-11-01 _(actual completion date in UTC-3)_  
 **Status**: ✅ RESOLVED  
 **Testing**: All validation steps completed successfully
-
