@@ -58,17 +58,39 @@ create_db() {
 
 create_superadmin() {
   set -e
-  local superadmin_email=$1
-  local superadmin_password=$2
-  local nc_username=$3
-  local nc_password=$4
 
   echo "======== Create Superadmin ========"
-  $BIN manage.py create_superadmin \
-    "$superadmin_email" \
-    "$superadmin_password" \
-    "$nc_username" \
-    "$nc_password" || true
+  DJANGO_SETTINGS_MODULE=$SETTINGS $BIN <<'PY'
+import os
+
+required_vars = [
+    "SUPERADMIN_EMAIL",
+    "SUPERADMIN_PASSWORD",
+    "NEXTCLOUD_ADMIN_USER",
+    "NEXTCLOUD_ADMIN_PASSWORD",
+]
+
+missing = [var for var in required_vars if not os.environ.get(var)]
+if missing:
+    raise SystemExit(f"Missing required environment variables: {', '.join(missing)}")
+
+settings_module = os.environ.get("DJANGO_SETTINGS_MODULE", "colmena.settings.prod")
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", settings_module)
+
+import django
+
+django.setup()
+
+from django.core.management import call_command
+
+call_command(
+    "create_superadmin",
+    os.environ["SUPERADMIN_EMAIL"],
+    os.environ["SUPERADMIN_PASSWORD"],
+    os.environ["NEXTCLOUD_ADMIN_USER"],
+    os.environ["NEXTCLOUD_ADMIN_PASSWORD"],
+)
+PY
   echo
 }
 
@@ -126,7 +148,7 @@ start_prod() {
   setup_static
   setup_db
   setup_seeds "$BACKEND_HOSTNAME" "$FRONTEND_HOSTNAME"
-  create_superadmin "$SUPERADMIN_EMAIL" "$SUPERADMIN_PASSWORD" "$NEXTCLOUD_ADMIN_USER" "$NEXTCLOUD_ADMIN_PASSWORD"
+  create_superadmin
 
   echo "======== Starting colmena ========"
   exec $BIN -m gunicorn --timeout "$worker_timeout" --workers "$workers" colmena.wsgi:application --bind "0.0.0.0:${PORT:-8000}"
@@ -149,7 +171,7 @@ start_local() {
   setup_static
   setup_db
   setup_seeds "$BACKEND_HOSTNAME" "$FRONTEND_HOSTNAME"
-  create_superadmin "$SUPERADMIN_EMAIL" "$SUPERADMIN_PASSWORD" "$NEXTCLOUD_ADMIN_USER" "$NEXTCLOUD_ADMIN_PASSWORD"
+  create_superadmin
 
   echo "======== Starting Nginx ========"
   service nginx start

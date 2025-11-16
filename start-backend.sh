@@ -51,6 +51,40 @@ run_with_retry() {
     done
 }
 
+create_superadmin_from_env() {
+    DJANGO_SETTINGS_MODULE=$SETTINGS $BIN <<'PY'
+import os
+
+required_vars = [
+    "SUPERADMIN_EMAIL",
+    "SUPERADMIN_PASSWORD",
+    "NEXTCLOUD_ADMIN_USER",
+    "NEXTCLOUD_ADMIN_PASSWORD",
+]
+
+missing = [var for var in required_vars if not os.environ.get(var)]
+if missing:
+    raise SystemExit(f"Missing required environment variables: {', '.join(missing)}")
+
+settings_module = os.environ.get("DJANGO_SETTINGS_MODULE", "colmena.settings.prod")
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", settings_module)
+
+import django
+
+django.setup()
+
+from django.core.management import call_command
+
+call_command(
+    "create_superadmin",
+    os.environ["SUPERADMIN_EMAIL"],
+    os.environ["SUPERADMIN_PASSWORD"],
+    os.environ["NEXTCLOUD_ADMIN_USER"],
+    os.environ["NEXTCLOUD_ADMIN_PASSWORD"],
+)
+PY
+}
+
 wait_for_nextcloud_health() {
     local base_url=${NEXTCLOUD_API_WRAPPER_URL:-http://nextcloud:5001}
     base_url=${base_url%/}
@@ -166,13 +200,7 @@ if [ -n "$SUPERADMIN_EMAIL" ] && [ -n "$SUPERADMIN_PASSWORD" ] && [ -n "$NEXTCLO
         exit 1
     fi
 
-    SUPERADMIN_CMD="$BIN manage.py create_superadmin \
-        $SUPERADMIN_EMAIL \
-        $SUPERADMIN_PASSWORD \
-        $NEXTCLOUD_ADMIN_USER \
-        $NEXTCLOUD_ADMIN_PASSWORD"
-
-    if run_with_retry "$SUPERADMIN_CMD" "Superadmin Creation"; then
+    if run_with_retry create_superadmin_from_env "Superadmin Creation"; then
         echo "✓ Superadmin user created successfully"
     else
         echo "✗ Failed to create superadmin after $MAX_RETRIES attempts"
