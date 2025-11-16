@@ -31,7 +31,6 @@ run_with_retry() {
     local delay=$INITIAL_DELAY
 
     echo "======== $description ========"
-    echo "Command: $cmd"
 
     for attempt in $(seq 1 $MAX_RETRIES); do
         if eval "$cmd"; then
