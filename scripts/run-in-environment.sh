@@ -53,6 +53,8 @@ COMPOSE_FILES=(-f docker-compose.yml -f docker-compose.local.yml)
 DEFAULT_HTTP_PORT=7180
 DEFAULT_BACKEND_PORT=7100
 DEFAULT_POSTGRES_PORT=7432
+STACK_STARTED_BY_SCRIPT=false
+KEEP_UP=${KEEP_UP:-false}
 
 ###############################################################################
 # Helper Functions
@@ -115,6 +117,14 @@ check_ports() {
             log_warning "Proceeding with potentially conflicting ports"
         fi
     fi
+}
+
+# Determine if any compose services are already running
+stack_is_running() {
+    local services
+    services=$(docker compose "${COMPOSE_FILES[@]}" ps --services --filter "status=running" 2>/dev/null || true)
+    services=${services//[$'\n''\r'' ']}
+    [[ -n "$services" ]]
 }
 
 # Auto-assign free ports
@@ -195,7 +205,14 @@ bring_up_stack() {
 
     check_docker
     ensure_env
-    check_ports
+    local already_running=false
+
+    if stack_is_running; then
+        already_running=true
+        log_info "Stack already running; ensuring services stay up"
+    else
+        check_ports
+    fi
 
     local compose_args="${COMPOSE_FILES[@]}"
     local cmd="up -d"
@@ -207,14 +224,26 @@ bring_up_stack() {
 
     docker compose $compose_args $cmd
 
+    if [[ "$already_running" == false ]]; then
+        STACK_STARTED_BY_SCRIPT=true
+    fi
+
     # Wait for critical services
     wait_for_service "postgres" 60
     wait_for_service "colmena-app" 120
 
     log_success "Stack is up and running!"
 
-    if [[ "$keep_up" != "--keep-up" ]]; then
-        log_info "Stack will be stopped when script exits (use --keep-up to override)"
+    if [[ "$keep_up" == "--keep-up" || "$keep_up" == "true" ]]; then
+        KEEP_UP=true
+    fi
+
+    if [[ "$already_running" == true ]]; then
+        log_info "Existing stack will remain untouched after this command."
+    elif [[ "${KEEP_UP}" == "true" ]]; then
+        log_info "Stack will remain running after script exits (--keep-up enabled)."
+    else
+        log_info "Stack will be stopped when script exits (use --keep-up to keep it running)."
     fi
 }
 
@@ -455,9 +484,15 @@ EOF
 
 # Set up cleanup trap
 cleanup() {
-    if [[ "${KEEP_UP:-false}" != "true" ]] && [[ "${COMMAND:-}" != "up" ]]; then
-        tear_down_stack
+    if [[ "$STACK_STARTED_BY_SCRIPT" != "true" ]]; then
+        return
     fi
+
+    if [[ "${KEEP_UP:-false}" == "true" ]]; then
+        return
+    fi
+
+    tear_down_stack
 }
 trap cleanup EXIT
 
