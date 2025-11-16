@@ -163,7 +163,7 @@ services:
     volumes:
       - media_data:/opt/app/media
       - static_data:/opt/app/static
-      # Supervisor config: uses start-backend.sh for production (runs as colmena user)
+      # Supervisor config: start-backend.sh handles privilege drop after fixing volume ownership
       - ./docker/colmena-app-supervisord.conf:/etc/supervisor/conf.d/supervisord.conf:ro
       # Legacy entrypoint: available for manual management commands
       - ./docker/colmena-app-entrypoint.sh:/opt/app/entrypoint.sh:ro

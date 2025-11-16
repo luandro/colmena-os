@@ -34,6 +34,7 @@ permissions:
 
 env:
   COMPOSE_FILE: docker-compose.local.yml
+  COLMENA_IMAGE_TAG: colmena-app:local
 
 jobs:
   test-local-build:
@@ -168,7 +169,7 @@ jobs:
         if: always()
         run: |
           echo "📦 Exporting colmena-app image for security scan..."
-          docker save colmena-app:latest | gzip > colmena-app.tar.gz
+          docker save "$COLMENA_IMAGE_TAG" | gzip > colmena-app.tar.gz
 
       - name: Upload image artifact
         if: always()
@@ -212,7 +213,7 @@ jobs:
           {
             echo "# 🔒 Container Security Scan Results";
             echo "";
-            echo "**Scan Target:** colmena-app:latest";
+            echo "**Scan Target:** $COLMENA_IMAGE_TAG";
             echo "**Status:** ⚠️ Skipped";
             echo "";
             echo "Security scan needs the image exported in test-local-build (lines 164-177).";
@@ -224,7 +225,7 @@ jobs:
         run: |
           echo "📦 Loading pre-built colmena-app image..."
           gunzip -c colmena-app.tar.gz | docker load
-          docker image inspect colmena-app:latest
+          docker image inspect "$COLMENA_IMAGE_TAG"
 
       - name: Run Trivy vulnerability scanner
         id: trivy
@@ -232,7 +233,7 @@ jobs:
         continue-on-error: true
         uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: 'colmena-app:latest'
+          image-ref: '${{ env.COLMENA_IMAGE_TAG }}'
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
@@ -263,7 +264,7 @@ jobs:
         run: |
           echo "# 🔒 Container Security Scan Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Scan Target:** colmena-app:latest" >> $GITHUB_STEP_SUMMARY
+          echo "**Scan Target:** $COLMENA_IMAGE_TAG" >> $GITHUB_STEP_SUMMARY
           echo "**Severity Filter:** CRITICAL, HIGH" >> $GITHUB_STEP_SUMMARY
           echo "**Status:** ✅ Completed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY

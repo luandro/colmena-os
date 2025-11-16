@@ -24,6 +24,43 @@ MAX_RETRIES=5
 INITIAL_DELAY=2  # seconds
 MAX_DELAY=30     # seconds
 
+# Ensure runtime directories exist and are owned by colmena before
+# we attempt write operations (collectstatic, media sync, log files).
+ensure_runtime_dirs() {
+    for dir in "$@"; do
+        if [ ! -d "$dir" ]; then
+            if mkdir -p "$dir"; then
+                echo "Created runtime directory $dir"
+            else
+                cat <<EOF
+ERROR: Unable to create required directory $dir
+This usually happens when docker volumes are mounted as root-owned paths.
+Run /opt/app/start-backend.sh as root once (the script will drop to colmena
+after fixing ownership) so that it can provision the runtime directories.
+EOF
+                exit 1
+            fi
+        fi
+
+        if [ "$(id -u)" -eq 0 ]; then
+            chown colmena:colmena "$dir"
+        elif [ ! -w "$dir" ]; then
+            cat <<EOF
+ERROR: Directory $dir is not writable by user $(id -un)
+The named volume was probably initialized with root:root ownership.
+Please run /opt/app/start-backend.sh as root at least once so it can chown $dir.
+EOF
+            exit 1
+        fi
+    done
+}
+
+maybe_chown_recursive() {
+    if [ "$(id -u)" -eq 0 ]; then
+        chown -R colmena:colmena "$@"
+    fi
+}
+
 # Function to run a command with retry logic
 run_with_retry() {
     local cmd="$1"
@@ -132,10 +169,7 @@ fi
 echo "✓ All required environment variables are set"
 echo ""
 
-if [ "$(id -u)" -eq 0 ]; then
-    mkdir -p "$STATIC_ROOT" "$MEDIA_ROOT" "$LOG_ROOT"
-    chown colmena:colmena "$STATIC_ROOT" "$MEDIA_ROOT" "$LOG_ROOT"
-fi
+ensure_runtime_dirs "$STATIC_ROOT" "$MEDIA_ROOT" "$LOG_ROOT"
 
 echo "Starting ColmenaOS Backend..."
 echo "Using settings=$SETTINGS"
@@ -144,9 +178,7 @@ echo "Using settings=$SETTINGS"
 echo "======== Collecting static files ========"
 $BIN ./manage.py collectstatic --noinput --settings=$SETTINGS
 
-if [ "$(id -u)" -eq 0 ]; then
-    chown -R colmena:colmena "$STATIC_ROOT"
-fi
+maybe_chown_recursive "$STATIC_ROOT"
 
 echo "======== Compiling translations ========"
 $BIN ./manage.py compilemessages -l en -l es -i venv
@@ -188,9 +220,7 @@ if ! $BIN manage.py loaddata apps/accounts/seeds/05-regions.json --settings=$SET
     echo "Regions already loaded"
 fi
 
-if [ "$(id -u)" -eq 0 ]; then
-    chown -R colmena:colmena "$MEDIA_ROOT" "$LOG_ROOT"
-fi
+maybe_chown_recursive "$MEDIA_ROOT" "$LOG_ROOT"
 
 # Create superadmin (handle Nextcloud dependency with retry)
 echo "======== Create Superadmin ========"
