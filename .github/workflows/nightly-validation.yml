@@ -37,13 +37,18 @@ jobs:
       - name: Run compose smoke test
         run: |
           echo "🧪 Running compose smoke test..."
-          TEARDOWN=0 PULL_IMAGES=1 ./scripts/compose-smoke.sh
+          export ENV_EXPORT_PATH="$RUNNER_TEMP/compose-ports.env"
+          TEARDOWN=0 PULL_IMAGES=1 ENV_EXPORT_PATH="$ENV_EXPORT_PATH" ./scripts/compose-smoke.sh
+          if [[ -f "$ENV_EXPORT_PATH" ]]; then
+            cat "$ENV_EXPORT_PATH" >> "$GITHUB_ENV"
+          else
+            echo "compose smoke test did not produce $ENV_EXPORT_PATH" >&2
+            exit 1
+          fi
 
       - name: Export environment for Playwright
         run: |
           set -euo pipefail
-          echo "PLAYWRIGHT_BASE_URL=http://localhost:80" >> "$GITHUB_ENV"
-          echo "PLAYWRIGHT_API_BASE_URL=http://localhost:8000/api" >> "$GITHUB_ENV"
           superadmin_email="$(awk -F= '/^SUPERADMIN_EMAIL=/{val=$2} END {print val}' .env)"
           if [[ -z "${superadmin_email}" ]]; then
             # CI-ONLY TEST CREDENTIAL: Not a production secret
@@ -89,7 +94,7 @@ jobs:
           PLAYWRIGHT_BASE_URL: ${{ env.PLAYWRIGHT_BASE_URL }}
           PLAYWRIGHT_API_BASE_URL: ${{ env.PLAYWRIGHT_API_BASE_URL }}
           PLAYWRIGHT_SUPERADMIN_EMAIL: ${{ env.SUPERADMIN_EMAIL }}
-          PLAYWRIGHT_SUPERADMIN_PASSWORD: ${{ secrets.SUPERADMIN_PASSWORD }}
+          PLAYWRIGHT_SUPERADMIN_PASSWORD: ${{ secrets.SUPERADMIN_PASSWORD || env.SUPERADMIN_PASSWORD }}
 
       - name: Upload compose smoke report
         if: always()
