@@ -55,8 +55,16 @@ export PLAYWRIGHT_SUPERADMIN_EMAIL PLAYWRIGHT_SUPERADMIN_PASSWORD
 echo "[playwright-smoke] Installing Playwright dependencies..."
 (cd "$PLAYWRIGHT_DIR" && npm ci --no-audit --no-fund --prefer-offline)
 
-echo "[playwright-smoke] Ensuring Playwright browsers are installed..."
-(cd "$PLAYWRIGHT_DIR" && npx playwright install --with-deps)
+PLAYWRIGHT_DEPS_MARKER="$PLAYWRIGHT_DIR/.playwright-deps-installed"
+
+if [[ -f "$PLAYWRIGHT_DEPS_MARKER" ]]; then
+  echo "[playwright-smoke] Playwright deps already satisfied; refreshing browsers only."
+  (cd "$PLAYWRIGHT_DIR" && npx playwright install)
+else
+  echo "[playwright-smoke] Running initial Playwright install with system deps (one-time)."
+  (cd "$PLAYWRIGHT_DIR" && npx playwright install --with-deps)
+  touch "$PLAYWRIGHT_DEPS_MARKER"
+fi
 
 echo "[playwright-smoke] Running Playwright smoke suite..."
 (cd "$PLAYWRIGHT_DIR" && npm run test -- "$@")
