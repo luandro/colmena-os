@@ -10,6 +10,19 @@
  */
 
 const http = require('http');
+const fs = require('fs');
+
+const runningInContainer = fs.existsSync('/.dockerenv');
+const DEFAULT_FRONTEND_PORT = runningInContainer ? 80 : 7180;
+const DEFAULT_BACKEND_PORT = runningInContainer ? 8000 : 7100;
+
+const FRONTEND_PORT = process.env.COLMENA_FRONTEND_PORT
+    || process.env.HTTP_PORT
+    || DEFAULT_FRONTEND_PORT;
+const BACKEND_PORT = process.env.COLMENA_BACKEND_PORT
+    || process.env.BACKEND_PORT
+    || DEFAULT_BACKEND_PORT;
+const HOSTNAME = process.env.COLMENA_HOST || 'localhost';
 
 
 /**
@@ -54,13 +67,10 @@ async function testBackendAPI() {
     console.log('Testing Backend API');
     console.log('='.repeat(60));
 
-    const backendPort = process.env.BACKEND_PORT || 7100;
-    const httpPort = process.env.HTTP_PORT || 7180;
-
     // Test 1: Check if nginx is serving the frontend
     console.log('\n1. Testing Frontend (nginx)...');
     try {
-        const frontendResponse = await makeRequest(`http://localhost:${httpPort}/`);
+        const frontendResponse = await makeRequest(`http://${HOSTNAME}:${FRONTEND_PORT}/`);
         console.log(`   ✓ Frontend is responding (status: ${frontendResponse.statusCode})`);
         console.log(`   Content-Type: ${frontendResponse.headers['content-type']}`);
     } catch (error) {
@@ -71,7 +81,7 @@ async function testBackendAPI() {
     // Test 2: Check if backend API is accessible
     console.log('\n2. Testing Backend API...');
     try {
-        const backendResponse = await makeRequest(`http://localhost:${backendPort}/api/`);
+        const backendResponse = await makeRequest(`http://${HOSTNAME}:${BACKEND_PORT}/api/`);
         console.log(`   ✓ Backend API is responding (status: ${backendResponse.statusCode})`);
 
         if (backendResponse.body) {
@@ -85,7 +95,7 @@ async function testBackendAPI() {
     // Test 3: Check static files
     console.log('\n3. Testing Static Files...');
     try {
-        const staticResponse = await makeRequest(`http://localhost:${httpPort}/static/`);
+        const staticResponse = await makeRequest(`http://${HOSTNAME}:${FRONTEND_PORT}/static/`);
         console.log(`   ✓ Static files are being served (status: ${staticResponse.statusCode})`);
     } catch (error) {
         console.log(`   Note: Static files may be at a different path (${error.message})`);
@@ -145,7 +155,6 @@ function testNodeJS() {
     console.log(`   ✓ Working directory: ${process.cwd()}`);
 
     // Test if we can access the file system
-    const fs = require('fs');
     try {
         const files = fs.readdirSync('/opt/app');
         console.log(`   ✓ Can access /opt/app directory (${files.length} items)`);

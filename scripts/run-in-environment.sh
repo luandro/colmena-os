@@ -338,10 +338,12 @@ run_tests() {
 
             # Check backend API
             log_info "Testing backend API..."
-            curl -sf http://localhost:${HTTP_PORT:-7180}/api/health/ >/dev/null || {
-                log_warning "Backend API health check failed (this may be expected if not implemented)"
-            }
-            log_success "Backend API is responding"
+            if curl -sf http://localhost:${HTTP_PORT:-7180}/api/health/ >/dev/null; then
+                log_success "Backend API is responding"
+            else
+                log_error "✗ Backend API health check failed"
+                exit 1
+            fi
 
             log_success "All infrastructure tests passed!"
             ;;
