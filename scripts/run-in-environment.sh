@@ -374,7 +374,7 @@ run_tests() {
 
             # Check database connectivity
             log_info "Testing database connectivity..."
-            docker compose "${COMPOSE_FILES[@]}" exec -T postgres pg_isready -U colmena || {
+            docker compose "${COMPOSE_FILES[@]}" exec -T postgres pg_isready -U "${POSTGRES_USER:-colmena}" -d "${POSTGRES_DB:-colmena}" || {
                 log_error "Database is not ready"
                 exit 1
             }
