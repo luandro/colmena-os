@@ -16,7 +16,7 @@
 #   # Run a Python script against the live database
 #   ./scripts/run-in-environment.sh backend scripts/test_db.py
 #
-#   # Start a development server for frontend
+#   # Show frontend development instructions (must run on host)
 #   ./scripts/run-in-environment.sh frontend dev
 #
 #   # Execute backend tests
@@ -289,45 +289,31 @@ run_frontend() {
     log_info "Running frontend command: $cmd"
 
     case "$cmd" in
-        "dev")
-            log_info "Starting frontend development server..."
-            bring_up_stack "" "--keep-up"
-
-            # For development, we need to run frontend in a separate container
-            # or use the host node_modules
-            log_warning "Frontend development server should be run from host machine"
-            log_info "Please run the following commands in a separate terminal:"
-            echo "  cd $ROOT_DIR/frontend"
-            echo "  npm run dev -- --host 0.0.0.0 --port 3000"
+        "dev"|"build"|"test"|"lint")
+            log_warning "Frontend commands (dev, build, test, lint) must be run on the host"
+            log_info "The runtime container only includes Python, nginx, and supervisor."
+            log_info "Node.js/npm are only available in the build stage."
             echo
-            log_info "Frontend will be accessible at http://localhost:3000"
-            log_info "Backend API is at http://localhost:${BACKEND_PORT:-7100}"
-            ;;
+            log_info "To run frontend commands, execute from your host machine:"
+            echo "  cd $ROOT_DIR/frontend"
+            echo "  npm run $cmd $*"
+            echo
 
-        "build")
-            log_info "Building frontend for production..."
-            bring_up_stack "" "--keep-up"
-
-            docker compose "${COMPOSE_FILES[@]}" exec -T colmena-app sh -c "cd /opt/app/frontend && npm run build"
-            ;;
-
-        "test")
-            log_info "Running frontend tests..."
-            bring_up_stack "" "--keep-up"
-
-            docker compose "${COMPOSE_FILES[@]}" exec -T colmena-app sh -c "cd /opt/app/frontend && npm test -- --watchAll=false $*"
-            ;;
-
-        "lint")
-            log_info "Linting frontend code..."
-            bring_up_stack "" "--keep-up"
-
-            docker compose "${COMPOSE_FILES[@]}" exec -T colmena-app sh -c "cd /opt/app/frontend && npm run lint $*"
+            if [[ "$cmd" == "dev" ]]; then
+                log_info "For development server specifically:"
+                echo "  npm run dev -- --host 0.0.0.0 --port 3000"
+                echo
+                log_info "Frontend will be accessible at http://localhost:3000"
+                log_info "Backend API is at http://localhost:${BACKEND_PORT:-7100}"
+                log_info "Make sure the stack is running: $0 up --keep-up"
+            fi
             ;;
 
         *)
             log_error "Unknown frontend command: $cmd"
             log_info "Available commands: dev, build, test, lint"
+            echo
+            log_info "Note: All frontend commands must be run on the host (see above)"
             exit 1
             ;;
     esac
@@ -427,7 +413,8 @@ Commands:
   backend <command...>       Run backend command in the container
                              Example: $0 backend manage.py showmigrations
 
-  frontend <cmd> [args...]   Run frontend commands
+  frontend <cmd> [args...]   Frontend helper (shows instructions)
+                             Note: All frontend commands must be run on the host
                              Available commands:
                                dev     - Start development server
                                build   - Build for production
