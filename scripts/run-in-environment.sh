@@ -122,7 +122,7 @@ check_ports() {
 # Determine if any compose services are already running
 stack_is_running() {
     local services
-    services=$(docker compose "${COMPOSE_FILES[@]}" ps --services --filter "status=running" 2>/dev/null || true)
+    services=$(docker compose "${COMPOSE_FILES[@]}" ps --services --status running 2>/dev/null || true)
     services=${services//[$'\n''\r'' ']}
     [[ -n "$services" ]]
 }
@@ -182,7 +182,7 @@ wait_for_service() {
 
     local count=0
     while [ $count -lt $timeout ]; do
-        if docker compose "${COMPOSE_FILES[@]}" ps --services --filter "status=running" | grep -q "^$service$"; then
+        if docker compose "${COMPOSE_FILES[@]}" ps --services --status running | grep -q "^$service$"; then
             log_success "$service is running"
             return 0
         fi
@@ -364,7 +364,7 @@ run_tests() {
             # Check all services are running
             local services=("postgres" "colmena-app" "nextcloud" "mail")
             for service in "${services[@]}"; do
-                if docker compose "${COMPOSE_FILES[@]}" ps --services --filter "status=running" | grep -q "^$service$"; then
+                if docker compose "${COMPOSE_FILES[@]}" ps --services --status running | grep -q "^$service$"; then
                     log_success "✓ $service is running"
                 else
                     log_error "✗ $service is not running"
