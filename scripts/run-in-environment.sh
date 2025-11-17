@@ -556,7 +556,11 @@ case "${COMMAND}" in
     "logs")
         shift
         check_docker
-        docker compose "${COMPOSE_FILES[@]}" logs -f "${1:-}"
+        if [[ -n "${1:-}" ]]; then
+            docker compose "${COMPOSE_FILES[@]}" logs -f "$1"
+        else
+            docker compose "${COMPOSE_FILES[@]}" logs -f
+        fi
         ;;
 
     "help"|"-h"|"--help"|"")
