@@ -35,6 +35,7 @@ permissions:
 env:
   COMPOSE_FILE: docker-compose.local.yml
   COLMENA_IMAGE_TAG: colmena-app:local
+  PROJECT_NAME: colmena
 
 jobs:
   test-local-build:
@@ -163,7 +164,7 @@ jobs:
         if: failure()
         run: |
           echo "📋 Collecting service logs..."
-          docker compose -f $COMPOSE_FILE logs --tail=100
+          docker compose -f $COMPOSE_FILE --project-name "$PROJECT_NAME" logs --tail=100
 
       - name: Export built image as artifact (for security scan reuse)
         if: always()
@@ -184,7 +185,7 @@ jobs:
         if: always()
         run: |
           echo "🧹 Cleaning up services..."
-          docker compose -f $COMPOSE_FILE down -v
+          docker compose -f $COMPOSE_FILE --project-name "$PROJECT_NAME" down -v
           docker system prune -f
 
   security-scan:
