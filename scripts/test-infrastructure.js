@@ -2,11 +2,14 @@
 /**
  * Example script demonstrating how to test the infrastructure from Node.js
  *
- * This script can be executed using:
- *   ./scripts/run-in-environment.sh exec node /opt/app/scripts/test-infrastructure.js
+ * IMPORTANT: This script must be run on the HOST machine, not inside the container.
+ * The runtime container only includes Python, nginx, and supervisor - Node.js is not available.
  *
- * Or from within the container:
- *   docker compose exec colmena-app node /opt/app/scripts/test-infrastructure.js
+ * To run this script:
+ *   node scripts/test-infrastructure.js
+ *
+ * Make sure the stack is running first:
+ *   ./scripts/run-in-environment.sh up --keep-up
  */
 
 const http = require('http');
@@ -257,8 +260,11 @@ async function main() {
         console.log('  - Access environment variables');
         console.log('  - Connect to the PostgreSQL database');
         console.log();
-        console.log('You can now write your own scripts and run them with:');
-        console.log('  ./scripts/run-in-environment.sh exec node your-script.js');
+        console.log('You can now write your own scripts and run them on the HOST with:');
+        console.log('  node your-script.js');
+        console.log();
+        console.log('Note: The runtime container does not include Node.js.');
+        console.log('      All Node.js scripts must run on the host machine.');
         console.log('='.repeat(60));
         process.exit(0);
     } else {
