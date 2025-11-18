@@ -28,6 +28,60 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Wait for container to be healthy
+wait_health() {
+  local cid=$1 label=$2 timeout=${3:-300} start now status
+  start=$(date +%s)
+  while true; do
+    status=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid") || status="unknown"
+    case "$status" in
+      healthy)
+        echo "[playwright-smoke] $label is healthy"
+        return 0
+        ;;
+      unhealthy)
+        echo "[playwright-smoke] ERROR: $label reported unhealthy" >&2
+        return 1
+        ;;
+    esac
+    now=$(date +%s)
+    if (( now - start > timeout )); then
+      echo "[playwright-smoke] ERROR: $label health check timed out after ${timeout}s" >&2
+      return 1
+    fi
+    sleep 3
+  done
+}
+
+# Wait for critical services to be healthy before running tests
+echo "[playwright-smoke] Waiting for postgres to be healthy..."
+postgres_cid=$(docker compose "${COMPOSE_FILES[@]}" ps -q postgres || true)
+if [[ -z "$postgres_cid" ]]; then
+  echo "[playwright-smoke] ERROR: postgres container not found" >&2
+  docker compose "${COMPOSE_FILES[@]}" ps
+  exit 1
+fi
+
+if ! wait_health "$postgres_cid" postgres 180; then
+  echo "[playwright-smoke] postgres health check failed. Recent logs:" >&2
+  docker compose "${COMPOSE_FILES[@]}" logs --no-color --tail=100 postgres || true
+  exit 1
+fi
+
+echo "[playwright-smoke] Waiting for colmena-app to be healthy..."
+app_cid=$(docker compose "${COMPOSE_FILES[@]}" ps -q colmena-app || true)
+if [[ -z "$app_cid" ]]; then
+  echo "[playwright-smoke] ERROR: colmena-app container not found" >&2
+  docker compose "${COMPOSE_FILES[@]}" ps
+  exit 1
+fi
+
+if ! wait_health "$app_cid" colmena-app 300; then
+  echo "[playwright-smoke] colmena-app health check failed. Recent logs:" >&2
+  docker compose "${COMPOSE_FILES[@]}" logs --no-color --tail=100 colmena-app || true
+  exit 1
+fi
+
 PLAYWRIGHT_DIR="$ROOT_DIR/tests/playwright"
 export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$PLAYWRIGHT_DIR/ms-playwright}"
 
