@@ -171,6 +171,33 @@ wait_for_nextcloud_health() {
     run_with_retry "curl -fsS --max-time 5 \"$health_url\" >/dev/null" "Nextcloud Healthcheck"
 }
 
+db_exists_or_create() {
+    # Gracefully handles the case where database already exists.
+    # postgres.py CREATE returns exit code 1 if the database exists (from psycopg2),
+    # which is expected on container restart and should not trigger retry logic.
+    # This wrapper allows the operation to succeed even if the database is already present.
+
+    echo "======== Database Creation ========"
+
+    # Capture both stdout and stderr
+    local output
+    if output=$($BIN ./bin/postgres.py CREATE 2>&1); then
+        echo "✓ Database created successfully"
+        return 0
+    else
+        # CREATE failed - check if it's because the database already exists
+        # PostgreSQL returns: "ERROR: database "name" already exists"
+        if echo "$output" | grep -qiE "(already exists|duplicate)"; then
+            echo "✓ Database already exists, skipping creation"
+            return 0
+        else
+            # Connection error or other genuine problem
+            echo "✗ Failed to create database: $output"
+            return 1
+        fi
+    fi
+}
+
 # Validate required environment variables
 echo "Validating required environment variables..."
 MISSING_VARS=0
@@ -222,9 +249,9 @@ $BIN ./manage.py compilemessages -l en -l es -i venv
 
 # Setup database (handle errors gracefully)
 echo "======== Database Setup ========"
-if ! run_with_retry "$BIN ./bin/postgres.py CREATE" "Database Creation"; then
-    echo "Database operation failed - database may not be ready"
-    echo "Continuing anyway (database might already exist)..."
+if ! db_exists_or_create; then
+    echo "Failed to create or verify database exists"
+    echo "Connection to database may not be available"
 fi
 
 run_with_retry "$BIN ./manage.py migrate --settings=$SETTINGS" "Database Migration"
