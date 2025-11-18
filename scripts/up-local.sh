@@ -27,7 +27,18 @@ read_env() {
 
 is_port_free() {
   # Use Python to attempt bind on 127.0.0.1:PORT to avoid permission issues from ss/lsof.
-  python - "$1" << 'PY'
+  # Prefer python3 (modern default), fall back to python2 if needed.
+  local python_cmd
+  if command -v python3 >/dev/null 2>&1; then
+    python_cmd="python3"
+  elif command -v python >/dev/null 2>&1; then
+    python_cmd="python"
+  else
+    echo "ERROR: Neither python3 nor python found in PATH" >&2
+    return 1
+  fi
+
+  "$python_cmd" - "$1" << 'PY'
 import socket, sys
 port=int(sys.argv[1])
 s=socket.socket()
