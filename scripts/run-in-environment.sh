@@ -49,6 +49,7 @@ NC='\033[0m' # No Color
 
 # Configuration
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
 COMPOSE_FILES=(-f docker-compose.yml -f docker-compose.local.yml)
 DEFAULT_HTTP_PORT=7180
 DEFAULT_BACKEND_PORT=7100
