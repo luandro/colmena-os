@@ -12,7 +12,7 @@ RUN apt-get update -y && \
   apt-get install -y \
   sudo \
   python3 \
-  pip \
+  python3-pip \
   python3-venv \
   libapache2-mod-wsgi-py3 && \
   rm -rf /var/lib/apt/lists/*
