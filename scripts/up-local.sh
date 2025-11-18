@@ -15,8 +15,12 @@ read_env() {
   local key="$1" default="$2" value
   if [[ -f .env ]]; then
     value=$(grep -E "^${key}=" .env | head -n1 | cut -d'=' -f2- || true)
-    value=${value%""}
-    value=${value#""}
+    # Strip leading and trailing double quotes if present
+    value=${value#\"}
+    value=${value%\"}
+    # Also strip single quotes if the value is wrapped in them
+    value=${value#\'}
+    value=${value%\'}
   fi
   printf "%s" "${value:-$default}"
 }
