@@ -413,7 +413,7 @@ run_tests() {
 
             # Check backend API
             log_info "Testing backend API..."
-            if curl -sf http://localhost:${HTTP_PORT:-7180}/api/health/ >/dev/null; then
+            if curl -sf http://localhost:${HTTP_PORT:-7180}/api/schema/ >/dev/null; then
                 log_success "Backend API is responding"
             else
                 log_error "✗ Backend API health check failed"
