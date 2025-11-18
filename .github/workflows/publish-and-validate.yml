@@ -77,10 +77,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Checkout code (no submodules needed)
+      - name: Checkout code with submodules
         uses: actions/checkout@v4
         with:
-          submodules: false
+          submodules: recursive
 
       - name: Create .env from template
         run: cp .env.example .env
