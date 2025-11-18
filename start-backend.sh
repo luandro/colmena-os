@@ -93,6 +93,8 @@ create_superadmin_from_env() {
 import os
 import sys
 
+# Only require the Nextcloud credentials if we're actually trying to create the superadmin
+# (which happens only when SUPERADMIN_EMAIL and SUPERADMIN_PASSWORD are provided)
 required_vars = [
     "SUPERADMIN_EMAIL",
     "SUPERADMIN_PASSWORD",
@@ -102,7 +104,8 @@ required_vars = [
 
 missing = [var for var in required_vars if not os.environ.get(var)]
 if missing:
-    raise SystemExit(f"Missing required environment variables: {', '.join(missing)}")
+    # This should not happen since the shell script checks before calling this function
+    raise SystemExit(f"Missing required environment variables for superadmin creation: {', '.join(missing)}")
 
 settings_module = os.environ.get("DJANGO_SETTINGS_MODULE", "colmena.settings.prod")
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", settings_module)
@@ -185,10 +188,11 @@ check_required_var() {
 }
 
 # Critical environment variables that must be set
-check_required_var "SUPERADMIN_EMAIL"
-check_required_var "SUPERADMIN_PASSWORD"
 check_required_var "SECRET_KEY"
 check_required_var "POSTGRES_PASSWORD"
+# Note: SUPERADMIN_EMAIL and SUPERADMIN_PASSWORD are optional
+# They are only required when creating a Django superadmin user (full-stack deployments)
+# Backend-only deployments can skip superadmin creation by omitting these variables
 # Note: NEXTCLOUD_ADMIN_USER and NEXTCLOUD_ADMIN_PASSWORD are optional
 # They are only needed if Nextcloud is part of the stack
 
