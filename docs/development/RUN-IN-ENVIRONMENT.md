@@ -319,8 +319,10 @@ See `scripts/test-infrastructure.js` for a complete example that:
 
 Run it with:
 ```bash
-./scripts/run-in-environment.sh exec node /opt/app/scripts/test-infrastructure.js
+node scripts/test-infrastructure.js
 ```
+
+**Note:** This script must run on the **host machine**, not in the container. The runtime container only includes Python, nginx, and supervisor—Node.js is not available. Make sure the stack is running first with `./scripts/run-in-environment.sh up --keep-up`.
 
 ## Troubleshooting
 
