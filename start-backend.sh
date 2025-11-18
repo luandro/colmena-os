@@ -91,6 +91,7 @@ run_with_retry() {
 create_superadmin_from_env() {
     DJANGO_SETTINGS_MODULE=$SETTINGS $BIN <<'PY'
 import os
+import sys
 
 required_vars = [
     "SUPERADMIN_EMAIL",
@@ -111,14 +112,25 @@ import django
 django.setup()
 
 from django.core.management import call_command
+from apps.accounts.models import User
 
-call_command(
-    "create_superadmin",
-    os.environ["SUPERADMIN_EMAIL"],
-    os.environ["SUPERADMIN_PASSWORD"],
-    os.environ["NEXTCLOUD_ADMIN_USER"],
-    os.environ["NEXTCLOUD_ADMIN_PASSWORD"],
-)
+# Check if superadmin already exists - if so, skip creation and exit successfully
+if User.objects.filter(email=os.environ["SUPERADMIN_EMAIL"]).exists():
+    print("Superadmin already exists, skipping creation")
+    sys.exit(0)
+
+try:
+    call_command(
+        "create_superadmin",
+        os.environ["SUPERADMIN_EMAIL"],
+        os.environ["SUPERADMIN_PASSWORD"],
+        os.environ["NEXTCLOUD_ADMIN_USER"],
+        os.environ["NEXTCLOUD_ADMIN_PASSWORD"],
+    )
+    sys.exit(0)
+except Exception as e:
+    print(f"Failed to create superadmin: {e}", file=sys.stderr)
+    sys.exit(1)
 PY
 }
 
