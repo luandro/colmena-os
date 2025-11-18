@@ -52,10 +52,6 @@ PORTS=(
   "$POSTGRES_PORT"
 )
 
-echo "Stopping local compose stacks (if running)..."
-"${COMPOSE_CMD[@]}" -f docker-compose.local.yml --project-name colmena down --remove-orphans 2>/dev/null || true
-"${COMPOSE_CMD[@]}" -f docker-compose.yml --project-name colmena-os down --remove-orphans 2>/dev/null || true
-
 has_lsof=0
 command -v lsof >/dev/null 2>&1 && has_lsof=1
 
@@ -111,11 +107,15 @@ if (( ${#docker_offenders[@]} > 0 )); then
 fi
 
 if [[ "${FORCE:-0}" != "1" ]]; then
-  echo "Dry-run. Set FORCE=1 to terminate these processes."
+  echo "Dry-run. Set FORCE=1 to terminate these processes and stop compose stacks."
   exit 0
 fi
 
-echo "FORCE=1 set. Terminating processes..."
+echo "FORCE=1 set. Stopping compose stacks..."
+"${COMPOSE_CMD[@]}" -f docker-compose.local.yml --project-name colmena down --remove-orphans 2>/dev/null || true
+"${COMPOSE_CMD[@]}" -f docker-compose.yml --project-name colmena-os down --remove-orphans 2>/dev/null || true
+
+echo "Terminating remaining processes..."
 for port in "${!offenders[@]}"; do
   for pid in ${offenders[$port]}; do
     if kill -0 "$pid" 2>/dev/null; then
