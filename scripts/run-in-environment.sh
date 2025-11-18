@@ -77,6 +77,27 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# Check if a port is in use (with fallback for systems without lsof)
+port_is_in_use() {
+    local port=$1
+
+    # Try lsof first if available
+    if command -v lsof >/dev/null 2>&1; then
+        lsof -Pi :$port -sTCP:LISTEN -t >/dev/null 2>&1
+        return $?
+    fi
+
+    # Fallback to ss (available on most Linux systems)
+    if command -v ss >/dev/null 2>&1; then
+        ss -ltnp 2>/dev/null | grep -qE ":$port\s"
+        return $?
+    fi
+
+    # If neither tool is available, assume port is free (best effort)
+    log_warning "Neither lsof nor ss available; skipping port availability check"
+    return 1
+}
+
 # Check if Docker is running
 check_docker() {
     if ! docker info >/dev/null 2>&1; then
@@ -94,17 +115,17 @@ check_ports() {
 
     log_info "Checking if ports are available..."
 
-    if lsof -Pi :$http_port -sTCP:LISTEN -t >/dev/null 2>&1; then
+    if port_is_in_use "$http_port"; then
         log_warning "HTTP port $http_port is already in use"
         conflict_found=true
     fi
 
-    if lsof -Pi :$backend_port -sTCP:LISTEN -t >/dev/null 2>&1; then
+    if port_is_in_use "$backend_port"; then
         log_warning "Backend port $backend_port is already in use"
         conflict_found=true
     fi
 
-    if lsof -Pi :$postgres_port -sTCP:LISTEN -t >/dev/null 2>&1; then
+    if port_is_in_use "$postgres_port"; then
         log_warning "Postgres port $postgres_port is already in use"
         conflict_found=true
     fi
@@ -135,15 +156,15 @@ auto_assign_ports() {
     local postgres_port=$DEFAULT_POSTGRES_PORT
 
     # Find free ports
-    while lsof -Pi :$http_port -sTCP:LISTEN -t >/dev/null 2>&1; do
+    while port_is_in_use "$http_port"; do
         http_port=$((http_port + 1))
     done
 
-    while lsof -Pi :$backend_port -sTCP:LISTEN -t >/dev/null 2>&1; do
+    while port_is_in_use "$backend_port"; do
         backend_port=$((backend_port + 1))
     done
 
-    while lsof -Pi :$postgres_port -sTCP:LISTEN -t >/dev/null 2>&1; do
+    while port_is_in_use "$postgres_port"; do
         postgres_port=$((postgres_port + 1))
     done
 
