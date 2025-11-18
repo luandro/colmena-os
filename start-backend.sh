@@ -134,6 +134,26 @@ except Exception as e:
 PY
 }
 
+check_nextcloud_available() {
+    # Quick check to see if Nextcloud API wrapper is available on the network.
+    # Returns 0 if available, 1 if not (or curl unavailable).
+    local base_url=${NEXTCLOUD_API_WRAPPER_URL:-http://nextcloud:5001}
+    base_url=${base_url%/}
+    local health_url=${NEXTCLOUD_HEALTHCHECK_URL:-$base_url/api/healthcheck}
+
+    if ! command -v curl >/dev/null 2>&1; then
+        echo "WARNING: curl not available; cannot check Nextcloud availability"
+        return 1
+    fi
+
+    # Single quick check (no retry), with short timeout
+    if curl -fsS --max-time 2 "$health_url" >/dev/null 2>&1; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 wait_for_nextcloud_health() {
     local base_url=${NEXTCLOUD_API_WRAPPER_URL:-http://nextcloud:5001}
     base_url=${base_url%/}
@@ -169,8 +189,8 @@ check_required_var "SUPERADMIN_EMAIL"
 check_required_var "SUPERADMIN_PASSWORD"
 check_required_var "SECRET_KEY"
 check_required_var "POSTGRES_PASSWORD"
-check_required_var "NEXTCLOUD_ADMIN_USER"
-check_required_var "NEXTCLOUD_ADMIN_PASSWORD"
+# Note: NEXTCLOUD_ADMIN_USER and NEXTCLOUD_ADMIN_PASSWORD are optional
+# They are only needed if Nextcloud is part of the stack
 
 if [ $MISSING_VARS -gt 0 ]; then
     echo ""
@@ -235,21 +255,34 @@ fi
 
 maybe_chown_recursive "$MEDIA_ROOT" "$LOG_ROOT"
 
-# Create superadmin (handle Nextcloud dependency with retry)
+# Create superadmin (only if both Django admin and Nextcloud admin credentials are available)
 echo "======== Create Superadmin ========"
-if [ -n "$SUPERADMIN_EMAIL" ] && [ -n "$SUPERADMIN_PASSWORD" ] && [ -n "$NEXTCLOUD_ADMIN_USER" ] && [ -n "$NEXTCLOUD_ADMIN_PASSWORD" ]; then
-    if ! wait_for_nextcloud_health; then
-        echo "Nextcloud API wrapper did not become healthy in time."
-        exit 1
-    fi
-
-    if run_with_retry create_superadmin_from_env "Superadmin Creation"; then
-        echo "✓ Superadmin user created successfully"
+if [ -n "$SUPERADMIN_EMAIL" ] && [ -n "$SUPERADMIN_PASSWORD" ]; then
+    # Check if Nextcloud credentials are also provided
+    if [ -n "$NEXTCLOUD_ADMIN_USER" ] && [ -n "$NEXTCLOUD_ADMIN_PASSWORD" ]; then
+        # Both sets of credentials exist; check if Nextcloud is available
+        if check_nextcloud_available; then
+            # Nextcloud is reachable; wait for it to be fully healthy
+            if ! wait_for_nextcloud_health; then
+                echo "⚠ Nextcloud API wrapper did not become healthy in time."
+                echo "  Skipping superadmin creation (Nextcloud required but unavailable)"
+                echo "  This may indicate a configuration issue in full-stack deployments."
+            elif run_with_retry create_superadmin_from_env "Superadmin Creation"; then
+                echo "✓ Superadmin user created successfully"
+            else
+                echo "✗ Failed to create superadmin after $MAX_RETRIES attempts"
+                echo "  This may be because Nextcloud is not responding"
+                echo "  Please check Nextcloud service and try again"
+            fi
+        else
+            # Nextcloud is not on this network (backend-only deployment)
+            echo "ℹ Nextcloud not detected on network; skipping superadmin creation"
+            echo "  This is normal for backend-only testing scenarios"
+        fi
     else
-        echo "✗ Failed to create superadmin after $MAX_RETRIES attempts"
-        echo "  This may be because Nextcloud is not responding"
-        echo "  Please check Nextcloud service and try again"
-        exit 1
+        # Nextcloud credentials not provided; Django admin only
+        echo "ℹ Nextcloud admin credentials not provided; skipping superadmin creation"
+        echo "  (Backend-only testing mode)"
     fi
 fi
 
