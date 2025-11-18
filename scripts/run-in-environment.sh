@@ -205,10 +205,16 @@ ensure_env() {
         fi
     fi
 
-    # Source the environment
-    set -a
-    source "$ROOT_DIR/.env"
-    set +a
+    # Source the environment without shell variable expansion (safer with secrets containing $)
+    # Extract VAR=value pairs and export them, avoiding parameter expansion issues with set -u
+    while IFS='=' read -r key value; do
+        # Skip empty lines and comments
+        [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
+        # Trim leading/trailing whitespace from key
+        key=$(echo "$key" | sed -e 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        # Only process non-empty keys
+        [[ -n "$key" ]] && export "$key"="$value"
+    done < "$ROOT_DIR/.env"
 }
 
 # Wait for service to be healthy
