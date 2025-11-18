@@ -77,6 +77,11 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# Check if stdin is a terminal (interactive mode)
+is_interactive() {
+    [[ -t 0 ]]
+}
+
 # Check if a port is in use (with fallback for systems without lsof)
 port_is_in_use() {
     local port=$1
@@ -131,12 +136,17 @@ check_ports() {
     fi
 
     if [[ "$conflict_found" == true ]]; then
-        read -p "  Try to use different ports? (y/n) " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            auto_assign_ports
+        if is_interactive; then
+            read -p "  Try to use different ports? (y/n) " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                auto_assign_ports
+            else
+                log_warning "Proceeding with potentially conflicting ports"
+            fi
         else
-            log_warning "Proceeding with potentially conflicting ports"
+            log_warning "Port conflict detected in non-interactive mode. Attempting auto-assignment..."
+            auto_assign_ports
         fi
     fi
 }
@@ -183,9 +193,16 @@ ensure_env() {
     if [[ ! -f "$ROOT_DIR/.env" ]]; then
         log_info "No .env file found. Creating from .env.example..."
         cp "$ROOT_DIR/.env.example" "$ROOT_DIR/.env"
-        log_warning "Please edit .env file and replace CHANGE_ME values"
-        log_warning "  Required: POSTGRES_PASSWORD, SECRET_KEY, COLMENA_SECRET_KEY, SUPERADMIN_PASSWORD"
-        read -p "Press enter when you've updated .env file..."
+
+        if is_interactive; then
+            log_warning "Please edit .env file and replace CHANGE_ME values"
+            log_warning "  Required: POSTGRES_PASSWORD, SECRET_KEY, COLMENA_SECRET_KEY, SUPERADMIN_PASSWORD"
+            read -p "Press enter when you've updated .env file..."
+        else
+            log_warning "Running in non-interactive mode. .env file created but may need manual configuration."
+            log_warning "  Required: POSTGRES_PASSWORD, SECRET_KEY, COLMENA_SECRET_KEY, SUPERADMIN_PASSWORD"
+            log_warning "  Update $ROOT_DIR/.env and re-run the command."
+        fi
     fi
 
     # Source the environment
