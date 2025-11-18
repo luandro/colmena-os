@@ -106,24 +106,6 @@ jobs:
             exit 1
           fi
 
-      - name: Export environment for Playwright
-        run: |
-          set -euo pipefail
-          superadmin_email="$(awk -F= '/^SUPERADMIN_EMAIL=/{val=$2} END {print val}' .env)"
-          if [[ -z "${superadmin_email}" ]]; then
-            # CI-ONLY TEST CREDENTIAL: Not a production secret
-            # This default matches .env.example and is used only for CI smoke tests
-            superadmin_email="admin@example.com"
-          fi
-          echo "SUPERADMIN_EMAIL=${superadmin_email}" >> "$GITHUB_ENV"
-          superadmin_password="$(grep '^SUPERADMIN_PASSWORD=' .env | cut -d= -f2- || true)"
-          if [[ -z "${superadmin_password}" ]]; then
-            # CI-ONLY TEST CREDENTIAL: Not a production secret
-            # This default matches .env.example and is used only for CI smoke tests
-            superadmin_password="CHANGE_ME"
-          fi
-          echo "SUPERADMIN_PASSWORD=${superadmin_password}" >> "$GITHUB_ENV"
-
       - name: Setup Playwright
         working-directory: tests/playwright
         run: npm install
@@ -134,12 +116,20 @@ jobs:
 
       - name: Run Playwright smoke suite
         working-directory: tests/playwright
-        run: npm run test
-        env:
-          PLAYWRIGHT_BASE_URL: ${{ env.PLAYWRIGHT_BASE_URL }}
-          PLAYWRIGHT_API_BASE_URL: ${{ env.PLAYWRIGHT_API_BASE_URL }}
-          PLAYWRIGHT_SUPERADMIN_EMAIL: ${{ env.SUPERADMIN_EMAIL }}
-          PLAYWRIGHT_SUPERADMIN_PASSWORD: ${{ secrets.SUPERADMIN_PASSWORD || env.SUPERADMIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # Extract credentials and URLs from .env and compose output
+          superadmin_email="$(grep '^SUPERADMIN_EMAIL=' ../../.env | cut -d= -f2- || echo 'admin@example.com')"
+          superadmin_password="$(grep '^SUPERADMIN_PASSWORD=' ../../.env | cut -d= -f2- || echo 'CHANGE_ME')"
+          playwright_base_url="${PLAYWRIGHT_BASE_URL:-http://localhost:3000}"
+          playwright_api_base_url="${PLAYWRIGHT_API_BASE_URL:-http://localhost:5000}"
+
+          # Pass directly to npm test via environment variables
+          PLAYWRIGHT_SUPERADMIN_EMAIL="${superadmin_email}" \
+          PLAYWRIGHT_SUPERADMIN_PASSWORD="${superadmin_password}" \
+          PLAYWRIGHT_BASE_URL="${playwright_base_url}" \
+          PLAYWRIGHT_API_BASE_URL="${playwright_api_base_url}" \
+          npm run test
 
       - name: Upload compose smoke report
         if: always()
