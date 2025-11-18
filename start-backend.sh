@@ -169,6 +169,7 @@ check_required_var "SUPERADMIN_EMAIL"
 check_required_var "SUPERADMIN_PASSWORD"
 check_required_var "SECRET_KEY"
 check_required_var "POSTGRES_PASSWORD"
+check_required_var "NEXTCLOUD_ADMIN_USER"
 check_required_var "NEXTCLOUD_ADMIN_PASSWORD"
 
 if [ $MISSING_VARS -gt 0 ]; then
