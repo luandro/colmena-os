@@ -164,17 +164,17 @@ jobs:
         run: |
           echo "📋 Collecting service logs..."
           echo "=== Colmena App Logs ==="
-          docker compose logs colmena-app --tail=200
+          docker compose -f docker-compose.yml --project-name colmena logs colmena-app --tail=200 || true
           echo "=== PostgreSQL Logs ==="
-          docker compose logs postgres --tail=100
+          docker compose -f docker-compose.yml --project-name colmena logs postgres --tail=100 || true
           echo "=== All Services Status ==="
-          docker compose ps
+          docker compose -f docker-compose.yml --project-name colmena ps || true
 
       - name: Teardown stack
         if: always()
         run: |
           echo "🧹 Cleaning up services..."
-          docker compose down -v
+          docker compose -f docker-compose.yml --project-name colmena down -v
           docker system prune -f
 
   security-scan:
