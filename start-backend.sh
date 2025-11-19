@@ -184,7 +184,13 @@ MISSING_VARS=0
 
 check_required_var() {
     VAR_NAME=$1
-    VAR_VALUE=$(eval echo \$$VAR_NAME)
+    # Use printf to safely dereference the variable without re-evaluating special characters.
+    # eval "printf '%s' \"\$$VAR_NAME\"" avoids the unsafe $(eval echo \$$VAR_NAME) pattern:
+    # - Backticks in the value won't execute subshells
+    # - $(...) syntax won't execute command substitution
+    # - $ characters won't be re-interpreted as variable references
+    # This allows secrets with special characters (from Django's get_random_secret_key, etc.)
+    VAR_VALUE=$(eval "printf '%s' \"\$$VAR_NAME\"")
     if [ -z "$VAR_VALUE" ]; then
         echo "ERROR: Required environment variable $VAR_NAME is not set"
         MISSING_VARS=$((MISSING_VARS + 1))
