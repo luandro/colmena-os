@@ -24,14 +24,14 @@ fi
 
 # Test that the image has both frontend and backend
 echo "🔍 Inspecting built image..."
-if docker run --rm colmena-app-test ls -la /app/backend/ 2>/dev/null | grep -q "manage.py"; then
+if docker run --rm colmena-app-test ls -la /opt/app/ 2>/dev/null | grep -q "manage.py"; then
     echo "✅ Backend files present in image"
 else
     echo "❌ Backend files missing from image"
     exit 1
 fi
 
-if docker run --rm colmena-app-test ls -la /app/frontend/dist/ 2>/dev/null | grep -q "index.html"; then
+if docker run --rm colmena-app-test ls -la /usr/share/nginx/html/ 2>/dev/null | grep -q "index.html"; then
     echo "✅ Frontend build files present in image"
 else
     echo "❌ Frontend build files missing from image"
