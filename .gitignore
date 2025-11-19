@@ -30,6 +30,8 @@ tests/test-results/
 tests/screenshots/
 tests/droplets.json
 /tmp/act-artifacts/
+REPORT.md
+smoke-report.md
 
 # GitHub Actions local testing
 .secrets
@@ -49,6 +51,7 @@ tests/droplets.json
 tmp/
 temp/
 .marscode/
+.claude/
 
 # CI/CD artifacts
 ci-results-*/
@@ -72,6 +75,10 @@ __pycache__/
 .pytest_cache/
 .coverage
 htmlcov/
+playwright-report/
+test-results/
+tests/playwright/ms-playwright/
+tests/playwright/.playwright-deps-installed
 
 # Node.js dependencies
 node_modules/

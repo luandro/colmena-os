@@ -1,223 +1,185 @@
-# ColmenaOS
+# ColmenaOS Unified Stack
 
-![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
-![License](https://img.shields.io/badge/license-MIT-blue)
-![Architecture](https://img.shields.io/badge/arch-amd64%20%7C%20arm64-success)
-![Version](https://img.shields.io/badge/version-1.2.0-blue)
-![Docker Hub](https://img.shields.io/badge/docker-hub-ready-blue)
-![Balena](https://img.shields.io/badge/balena-compatible-orange)
+This repo bundles the Colmena frontend, backend, and supporting services into a single Docker Compose deployment. It is the canonical place to run Colmena locally, exercise end-to-end tests, and assemble the unified Docker image that we ship to downstream platforms. Product guidance (audio workflows, user manuals, etc.) lives in the upstream Colmena documentation; this README keeps the engineering view scoped to the stack itself.
 
-ColmenaOS is an offline-first, solar-powered operating system for community radio and podcasting. Built on BalenaOS, it provides a complete, self-contained platform that works with or without internet connectivity, giving communities full control over their media infrastructure.
+## Goals
 
-## 🌟 Key Features
+- Provide a reproducible Compose stack that matches our production Balena deployment.
+- Ship a single `colmena-app` image with the Django backend and Vite-built React frontend behind nginx.
+- Configure Postgres, Nextcloud, Mailcrab, and pgAdmin with sane defaults for smoke tests.
+- Make Playwright smoke tests and CI workflows easy to run locally.
 
-- **🔌 Offline First**: Fully functional without internet connection
-- **☀️ Solar Optimized**: Low power consumption for renewable energy systems
-- **📻 Professional Audio**: Built-in recording, editing, and broadcasting tools
-- **🔧 Multi-Architecture**: Supports AMD64 PCs and ARM64 devices (Raspberry Pi 4+)
-- **🐳 Container-Based**: Modular architecture using Docker containers
-- **🚀 Auto-Updates**: Automated CI/CD pipeline with safe rollback capabilities
-- **🌐 Community Focused**: Designed for decentralized, sovereign media production
-- **🔒 Secure by Default**: Pre-configured security and data sovereignty
+## Services & Ports
 
-## 🏗️ Architecture
+| Service            | Purpose                                   | Host Ports (default) |
+|--------------------|-------------------------------------------|----------------------|
+| `colmena-app`      | Unified frontend + backend (`nginx`+Django) | 7180 (HTTP), 7100 (API) |
+| `postgres`         | Application database                      | 7432                 |
+| `pgadmin`          | Database admin UI                         | 7050                 |
+| `nextcloud`        | Media storage + API wrapper               | 7103 (UI), 7104 (API) |
+| `mail` (Mailcrab)  | SMTP sink + web UI                        | 7025 (SMTP), 7080 (UI) |
 
-ColmenaOS consists of multiple services orchestrated via Docker Compose:
+All ports are overridable through `.env`; the defaults above match `.env.example` and Playwright expectations.
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                     ColmenaOS Stack                     │
-├─────────────────┬────────────┬────────────┬────────────┤
-│    Frontend     │   Backend  │ Nextcloud  │  Mailcrab  │
-│  (React PWA)    │  (Django)  │  (Files)   │  (Email)   │
-├─────────────────┴────────────┴────────────┴────────────┤
-│                    PostgreSQL Database                   │
-├─────────────────────────────────────────────────────────┤
-│                   BalenaOS (Host OS)                    │
-└─────────────────────────────────────────────────────────┘
-```
+## Prerequisites
 
-## 🚀 Quick Start
+- Docker Engine 24+
+- Docker Compose plugin 2.20+
+- Git (with submodule support)
+- Node.js 20.x (only required for frontend lint/tests or Vite builds)
 
-### Option 1: Local Development (Recommended for Testing)
+## Clone & Configure
 
 ```bash
-# Clone with submodules
 git clone --recursive https://github.com/colmena-project/colmena-os.git
 cd colmena-os
 
-# Copy and configure environment
+# If you cloned without --recursive
+# git submodule update --init --recursive
+
 cp .env.example .env
-# Edit .env file - replace all CHANGE_ME values with secure passwords
+# Replace every CHANGE_ME with secure values
+```
 
-# Start all services
+Key environment defaults:
+
+| Variable               | Default                                        | Notes |
+|------------------------|------------------------------------------------|-------|
+| `HTTP_PORT`            | `7180`                                         | nginx / frontend |
+| `BACKEND_PORT`         | `7100`                                         | Gunicorn API |
+| `POSTGRES_HOST_PORT`   | `7432`                                         | Exposes Postgres locally |
+| `SUPERADMIN_EMAIL`     | `admin@example.com`                            | Consumed by smoke tests |
+| `SUPERADMIN_PASSWORD`  | `CHANGE_ME`                                    | Set before first boot |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:7180,http://127.0.0.1:7180,...` | Must include frontend origins |
+
+## Compose Files
+
+- `docker-compose.yml` uses the published Docker Hub image (`communityfirst/colmena-app:latest`).
+- `docker-compose.local.yml` rebuilds `colmena-app` from the local sources and exposes developer-friendly ports.
+
+You can combine them to reuse shared service definitions while swapping the app image:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+```
+
+## Running the Stack
+
+### Using the published image
+
+```bash
 docker compose up -d
-
-# Wait for services to start (about 2-3 minutes)
-docker compose logs -f colmena-app  # Watch startup logs
+docker compose logs -f colmena-app  # wait for "Starting colmena" in the output
 ```
 
-**🌐 Access Your Services:**
-- **Frontend (Main App)**: http://localhost:8080
-- **Backend API**: http://localhost:8000
-- **pgAdmin (Database)**: http://localhost:5050
-- **Nextcloud (Files)**: http://localhost:8003
-- **Mailcrab (Email)**: http://localhost:1080
-
-**Connect to a server:**
-- **Follow documentation**: [Documentation](https://docs.colmena.media/use/add-server/)
--
-
-**📋 Default Login:**
-- **Email**: admin@colmena.org
-- **Password**: (set in .env as SUPERADMIN_PASSWORD)
-
-### Option 2: Production Deployment with Balena
+### Building from source
 
 ```bash
-# Install Balena CLI
-npm install -g balena-cli
-
-# Login and create fleet
-balena login
-balena fleet create myfleet
-
-# Deploy to fleet
-git clone --recursive https://github.com/colmena-project/colmena-os.git
-cd colmena-os
-balena push myfleet
-
-# Flash device and boot
-balena os download raspberrypi4-64 --version latest
-balena os configure downloaded-image.img --fleet myfleet
-balena local flash downloaded-image.img
+docker compose -f docker-compose.yml -f docker-compose.local.yml build colmena-app
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
 ```
 
-## 📋 Requirements
+### Tear down
 
-### Hardware
-- **Minimum**: 2GB RAM, 16GB storage, ARM64/AMD64 CPU
-- **Recommended**: 4GB RAM, 32GB storage, USB audio interface
-- **Supported Devices**: Raspberry Pi 4, Intel NUC, generic x86_64
-
-### Software
-- **Docker & Docker Compose** (for local development)
-- **Balena CLI** (for production deployments)
-- **Git** with submodule support
-
-### Ports Used
-- **8080**: Frontend application (main interface)
-- **8000**: Backend API
-- **5432**: PostgreSQL database  
-- **5050**: pgAdmin web interface
-- **8003/8004**: Nextcloud file storage
-- **1080/1025**: Mailcrab email testing
-
-## 🔄 CI/CD Pipeline
-
-Our automated pipeline ensures reliable deployments:
-
-```mermaid
-flowchart LR
-    A[Daily Check] --> B{Updates?}
-    B -->|Yes| C[Build Images]
-    B -->|No| D[Exit]
-    C --> E[Push to Docker Hub]
-    E --> F[Deploy Draft to Balena]
-    F --> G[Human Testing]
-    G -->|Approved| H[Release to Production]
-```
-
-### Automated Workflows
-- **Daily builds**: Check for submodule updates and rebuild if needed
-- **Draft deployments**: Automatic deployment to test fleet
-- **Release process**: Manual approval required for production
-
-## 🛠️ Development
-
-### Project Structure
-```
-colmena-os/
-├── docker-compose.yml      # Service definitions
-├── balena.yml             # Balena configuration
-├── .github/               # GitHub Actions workflows
-│   ├── workflows/         # CI/CD pipelines
-│   └── actions/           # Reusable actions
-├── backend/               # Django backend (submodule)
-├── frontend/              # React frontend (submodule)
-├── devops/                # Infrastructure configs (submodule)
-└── tests/                 # Testing infrastructure
-```
-
-### Working with Submodules
 ```bash
-# Update all submodules
-git submodule update --remote --merge
-
-# Work on a specific component
-cd frontend
-git checkout -b feature/my-feature
-# Make changes, commit, push
-cd ..
-git add frontend
-git commit -m "Update frontend submodule"
-```
-
-### Testing
-```bash
-# Quick test - rebuild and verify all services
-./scripts/clean_and_test.sh
-
-# Reset database if needed
-./scripts/reset_postgres.sh
-
-# Run full CI test suite
-./scripts/ci-test.sh local
-```
-
-### Troubleshooting
-
-**Services not starting?**
-```bash
-# Check service status
-docker compose ps
-
-# View logs
-docker compose logs colmena-app
-docker compose logs postgres
-
-# Restart services
-docker compose restart
-
-# Complete reset
 docker compose down --volumes
-docker compose up -d
+# or, if you used both files:
+docker compose -f docker-compose.yml -f docker-compose.local.yml down --volumes
 ```
 
-**Can't access services?**
-- Ensure Docker is running and ports aren't blocked
-- Wait 2-3 minutes for full startup
-- Check health: `docker compose ps` - all services should show "healthy" or "running"
+## Development Workflow
 
-## 📚 Documentation
+### Running Code Against Infrastructure
 
-- [Installation Guide](https://docs.colmena.coop/installation/)
-- [Configuration Reference](https://docs.colmena.coop/configuration/)
-- [API Documentation](https://docs.colmena.coop/api/)
-- [Troubleshooting](https://docs.colmena.coop/troubleshooting/)
+The `run-in-environment.sh` script provides a unified interface to run code (Python/JavaScript) against the live infrastructure:
 
-## 🤝 Contributing
+```bash
+# Run Django management commands
+./scripts/run-in-environment.sh backend manage.py showmigrations
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+# Execute Python scripts against the live database
+./scripts/run-in-environment.sh backend scripts/analyze_data.py
 
-## 📄 License
+# Run arbitrary Python code
+./scripts/run-in-environment.sh backend python -c "from django.conf import settings; print(settings.DEBUG)"
 
-MIT License - see [LICENSE](LICENSE) file for details.
+# Test infrastructure
+./scripts/run-in-environment.sh test infra
 
-## 🙏 Acknowledgments
+# Drop into a shell
+./scripts/run-in-environment.sh shell
+```
 
-ColmenaOS is built with support from:
-- [Cambá Cooperative](https://camba.coop) - Core platform development
-- [Wakoma](https://wakoma.co) - Hardware integration
-- [CORAPE](https://corape.org.ec/) - Community testing
-- Community contributors worldwide
+See [`docs/development/RUN-IN-ENVIRONMENT.md`](docs/development/RUN-IN-ENVIRONMENT.md) for comprehensive documentation and examples.
+
+### Smoke Testing
+
+`./scripts/run-playwright-smoke.sh` automates the full smoke loop:
+
+```bash
+./scripts/run-playwright-smoke.sh            # build, boot, test, tear down
+./scripts/run-playwright-smoke.sh --keep-up  # leave the stack running afterwards
+./scripts/run-playwright-smoke.sh -- --grep "connects server"  # pass extra flags to Playwright
+```
+
+The script expects the defaults from `.env.example`. If you override credentials or ports, export matching `PLAYWRIGHT_*` environment variables before running it (see `tests/playwright/tests/app.smoke.spec.ts`).
+
+## Development Notes
+
+- The frontend submodule temporarily tracks `git@gitlab.com:luandro/frontend.git` on branch `fix-openapi-status-fallback` while the upstream PR is under review.
+- Running `npm install` within `frontend/` triggers OpenAPI client generation; ensure the backend schema is reachable (bring the stack up) or install with `--ignore-scripts` and regenerate later.
+
+### Nginx Configuration
+
+- **Bundled default**: `docker/colmena-app-nginx-default-http.conf` (copied into `/etc/nginx/http.d/default.conf` during the image build)
+- **Compose override**: `docker/colmena-app-nginx.conf` mounts to `/etc/nginx/http.d/colmena.conf` as an empty override hook for local tweaks
+- **Customization**: Copy the default server block (or mount your own file) and restart with `docker compose restart colmena-app`
+
+### Security Headers
+
+The nginx configuration includes baseline security headers to protect against common web vulnerabilities:
+
+- **Content-Security-Policy** (CSP): Controls which resources the browser is allowed to load
+- **Strict-Transport-Security** (HSTS): Enforces HTTPS connections (max-age=31536000)
+- **X-Content-Type-Options**: Prevents MIME type sniffing attacks
+- **X-Frame-Options**: Protects against clickjacking (set to SAMEORIGIN)
+- **Referrer-Policy**: Controls referrer information sent with requests
+- **Permissions-Policy**: Restricts browser features like geolocation, microphone, and camera
+
+The default CSP is configured to work with the React frontend while maintaining security. To customize the Content-Security-Policy, you can override the nginx config by mounting a custom configuration in `docker/colmena-app-nginx.conf`.
+
+Verify headers are present:
+
+```bash
+curl -I localhost:7180 | grep -i "content-security-policy"
+curl -I localhost:7180 | grep -i "strict-transport"
+```
+
+### Backend Scripts
+
+The `colmena-app` container provides two startup scripts:
+
+- **`/opt/app/start-backend.sh`** (canonical) – Main startup script used by supervisor. Handles privilege dropping, database setup, migrations, and gunicorn startup. Runs backend as non-root `colmena` user.
+- **`/opt/app/entrypoint.sh`** (legacy) – Available for manual management commands. Example: `docker compose exec colmena-app /opt/app/entrypoint.sh migrate`.
+
+For production use, `start-backend.sh` is the recommended script as it includes security improvements and better error handling.
+
+## Useful Commands
+
+```bash
+docker compose logs -f colmena-app          # tail nginx + gunicorn logs
+docker compose exec colmena-app sh          # open a shell in the unified container
+docker compose logs -f postgres             # watch database activity
+```
+
+## Documentation Map
+
+- [docs/index.md](docs/index.md) – objectives, roadmap, high-level guidance.
+- [docs/30-implementation/](docs/30-implementation/README.md) – Dockerfile/compose/CI details.
+- [docs/40-runbooks/](docs/40-runbooks/README.md) – operational runbooks for Docker, CasaOS, Balena, etc.
+- [tests/playwright/](tests/playwright) – smoke scenarios and support scripts.
+- `context/` – scratch notes to be promoted into docs.
+
+## Contributing & License
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for coding standards and review expectations (note the submodule policy in `CLAUDE.md`). ColmenaOS is released under the MIT License; view [LICENSE](LICENSE) for the full text.

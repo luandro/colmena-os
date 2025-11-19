@@ -7,8 +7,12 @@ services:
   # Postgres (Database Service)
   postgres:
     image: postgres:13
-    command: postgres -c 'max_connections=10000'
-    container_name: colmena_postgres
+    # Keep Postgres connections modest (200 for dev, <500 for prod) to avoid >10GB RAM usage.
+    # Override via POSTGRES_MAX_CONNECTIONS when coupled with PgBouncer or similar pooling.
+    command:
+      - postgres
+      - -c
+      - "max_connections=${POSTGRES_MAX_CONNECTIONS:-200}"
     hostname: ${POSTGRES_HOSTNAME:-postgres}
     env_file:
       - .env
@@ -17,7 +21,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-colmena}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
       - ./docker/postgres-init:/docker-entrypoint-initdb.d
@@ -37,13 +41,12 @@ services:
 
   # pgAdmin (Database Management UI)
   pgadmin:
-    container_name: colmena_pgadmin
     image: dpage/pgadmin4:latest
     environment:
       - PGADMIN_DEFAULT_EMAIL=${PGADMIN_DEFAULT_EMAIL:-admin@colmena.local}
       - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_DEFAULT_PASSWORD}
     ports:
-      - 5050:80
+      - "${PGADMIN_PORT:-5050}:80"
     volumes:
       - pgadmin_data:/var/lib/pgadmin
     networks:
@@ -56,24 +59,24 @@ services:
 
   # Nextcloud Service
   nextcloud:
-    container_name: colmena_nextcloud
     image: colmena_nextcloud
     build:
-      context: colmena-devops/devops/apps/nextcloud/
-      dockerfile: builder/Dockerfile
+      context: .
+      dockerfile: docker/nextcloud-builder.Dockerfile
       args:
-        BUILD_CONTEXT: builder
+        BUILD_CONTEXT: colmena-devops/devops/apps/nextcloud/builder
         NEXTCLOUD_VERSION: ${NEXTCLOUD_VERSION:-28.0.3}
         NEXTCLOUD_API_WRAPPER_PORT: ${NEXTCLOUD_API_WRAPPER_PORT:-5001}
         APACHE_APP_PATH: ${APACHE_APP_PATH:-/var/www/nc_api_wrapper}
-    privileged: true
+    # Removed privileged mode for security (Issue #6)
+    # Add specific capabilities only if needed: cap_add: [CHOWN, SETUID, SETGID]
     networks:
       - colmena_devops
     volumes:
       - nextcloud_data:/var/www/html
     ports:
-      - 8003:80
-      - 8004:5001
+      - "${NEXTCLOUD_HTTP_PORT:-8003}:80"
+      - "${NEXTCLOUD_API_HOST_PORT:-8004}:5001"
     environment:
       - SQLITE_DATABASE=nextcloud
       - NEXTCLOUD_TRUSTED_DOMAINS=${NEXTCLOUD_TRUSTED_DOMAINS:-colmena.local,localhost,*.local,192.168.*.*,10.*.*.*}
@@ -87,7 +90,6 @@ services:
 
   # Mail Service (Mailcrab)
   mail:
-    container_name: colmena_mail
     image: colmena_mail
     build:
       context: colmena-devops/devops/apps/mailcrab
@@ -95,8 +97,8 @@ services:
       args:
         - MAILCRAB_VERSION=latest
     ports:
-      - 1080:1080
-      - 1025:1025
+      - "${MAILCRAB_UI_PORT:-1080}:1080"
+      - "${MAILCRAB_SMTP_PORT:-1025}:1025"
     networks:
       colmena_devops:
         aliases:
@@ -109,20 +111,33 @@ services:
   # Colmena Unified App (Frontend + Backend in single container)
   # ----------------------------------------------------------------------------
   colmena-app:
-    image: communityfirst/colmena-app:latest
+    image: ${COLMENA_APP_IMAGE:-communityfirst/colmena-app:latest}
+    x-casaos:
+      store_app_id: colmena-os
+      category: Media
+      architectures:
+        - amd64
+        - arm64
+      main: colmena-app
+      title: ColmenaOS
+      description: Offline-first community media platform
     env_file:
       - .env
     ports:
-      - "${HTTP_PORT:-80}:80"
-      - "${BACKEND_PORT:-8000}:8000"
+      # Port format: "HOST_PORT:CONTAINER_PORT"
+      # HOST_PORT: Port on your machine (defaults match .env.example for local dev)
+      # CONTAINER_PORT: Port inside the container (nginx=80, gunicorn=8000)
+      - "${HTTP_PORT:-7180}:80"
+      - "${BACKEND_PORT:-7100}:8000"
     environment:
       - STAGE=prod
       - DATABASE_URL=postgresql://${POSTGRES_USER:-colmena}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-colmena}
       - SECRET_KEY=${SECRET_KEY}
+      - COLMENA_SECRET_KEY=${COLMENA_SECRET_KEY}
       - DEBUG=${DEBUG:-false}
-      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-colmena.local,localhost,*.local,*}
-      - CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS:-http://localhost:8080}
-      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
+      - "ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1,*.local}"
+      - "CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS:-http://localhost:${HTTP_PORT:-7180}}"
+      - "CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:${HTTP_PORT:-7180},http://127.0.0.1:${HTTP_PORT:-7180},http://localhost:3000,http://127.0.0.1:3000}"
       - POSTGRES_DATABASE=${POSTGRES_DB:-colmena}
       - POSTGRES_USERNAME=${POSTGRES_USER:-colmena}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -132,6 +147,7 @@ services:
       - EMAIL_PORT=1025
       - EMAIL_USE_TLS=false
       - NEXTCLOUD_URL=http://nextcloud
+      - NEXTCLOUD_API_URL=${NEXTCLOUD_API_URL:-http://nextcloud}
       - NEXTCLOUD_API_WRAPPER_URL=http://nextcloud:5001
       - NEXTCLOUD_USERNAME=${NEXTCLOUD_ADMIN_USER:-admin}
       - NEXTCLOUD_PASSWORD=${NEXTCLOUD_ADMIN_PASSWORD}
@@ -147,6 +163,14 @@ services:
     volumes:
       - media_data:/opt/app/media
       - static_data:/opt/app/static
+      # Supervisor config: start-backend.sh handles privilege drop after fixing volume ownership
+      - ./docker/colmena-app-supervisord.conf:/etc/supervisor/conf.d/supervisord.conf:ro
+      # Legacy entrypoint: available for manual management commands
+      - ./docker/colmena-app-entrypoint.sh:/opt/app/entrypoint.sh:ro
+      # Nginx configurations
+      - ./docker/colmena-app-nginx.conf:/etc/nginx/http.d/colmena.conf:ro
+      - ./docker/colmena-app-nginx-default-http.conf:/etc/nginx/http.d/default.conf:ro
+      - ./docker/colmena-app-nginx-disable.conf:/etc/nginx/conf.d/default.conf:ro
     networks:
       - colmena_devops
     depends_on:

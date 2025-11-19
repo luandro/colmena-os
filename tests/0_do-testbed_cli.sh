@@ -9,6 +9,7 @@ DO_REGION="nyc3"
 DO_SIZE="s-2vcpu-4gb"
 DO_IMAGE="ubuntu-22-04-x64"
 CLOUD_INIT_FILE="./cloud-init.yml"
+DEFAULT_TESTBED_TAG="${TESTBED_TAG:-${TESTBED_PREFIX}-ci}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -46,8 +47,32 @@ check_requirements() {
     fi
 }
 
+wait_for_tag_cleanup() {
+    local droplet_tag=$1
+    local max_attempts=${2:-10}
+    local sleep_seconds=${3:-15}
+
+    for ((attempt=1; attempt<=max_attempts; attempt++)); do
+        local remaining=$(doctl compute droplet list --tag-name "$droplet_tag" --format ID --no-header 2>/dev/null || true)
+        if [[ -z "$remaining" ]]; then
+            return 0
+        fi
+
+        log "Waiting for droplets tagged $droplet_tag to be fully destroyed (attempt $attempt/$max_attempts)"
+        sleep "$sleep_seconds"
+    done
+
+    warn "Droplets still tagged with $droplet_tag after waiting"
+    return 1
+}
+
 create_testbed() {
     local testbed_name=${1:-"default"}
+    local droplet_tag=${2:-$DEFAULT_TESTBED_TAG}
+
+    # Normalise tag to meet DigitalOcean requirements (lowercase alphanumeric and dashes)
+    droplet_tag=$(echo "$droplet_tag" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g')
+
     local droplet_name="${TESTBED_PREFIX}-${testbed_name}-$(date +%s)"
     
     log "Creating testbed: $droplet_name"
@@ -60,13 +85,14 @@ create_testbed() {
     fi
     
     # Create droplet
-    log "Creating droplet with cloud-init configuration..."
+    log "Creating droplet with cloud-init configuration (tag: $droplet_tag)..."
     doctl compute droplet create "$droplet_name" \
         --region "$DO_REGION" \
         --size "$DO_SIZE" \
         --image "$DO_IMAGE" \
         --user-data-file "$CLOUD_INIT_FILE" \
         --ssh-keys "$ssh_keys" \
+        --tag-name "$droplet_tag" \
         --wait
     
     # Get droplet IP
@@ -76,6 +102,7 @@ create_testbed() {
     log "Droplet: $droplet_name"
     log "IP: $droplet_ip"
     log "SSH: ssh root@$droplet_ip"
+    log "Tag: $droplet_tag"
     
     # Wait for cloud-init to complete
     log "Waiting for system initialization (this may take 2-3 minutes)..."
@@ -151,23 +178,53 @@ EOF
 
 destroy_testbed() {
     local pattern=${1:-$TESTBED_PREFIX}
-    
+    local droplet_tag=${2:-$DEFAULT_TESTBED_TAG}
+
+    droplet_tag=$(echo "$droplet_tag" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g')
+
+    log "Ensuring testbeds tagged '$droplet_tag' are destroyed"
+
+    # Attempt deletion by tag first; ignore errors if the tag does not exist yet
+    if droplet_ids=$(doctl compute droplet list --tag-name "$droplet_tag" --format ID --no-header 2>/dev/null); then
+        if [[ -n "$droplet_ids" ]]; then
+            log "Found droplets via tag: $(echo "$droplet_ids" | tr '\n' ' ')"
+            if ! doctl compute droplet delete --tag-name "$droplet_tag" --force; then
+                warn "Failed to delete all droplets by tag $droplet_tag"
+            fi
+            wait_for_tag_cleanup "$droplet_tag" || return 1
+        else
+            log "No droplets currently tagged with $droplet_tag"
+        fi
+    else
+        warn "Unable to list droplets by tag $droplet_tag"
+    fi
+
+    # Fallback to name pattern matching for legacy resources without the tag
     log "Searching for testbeds matching: $pattern"
-    
     local droplets=$(doctl compute droplet list --format Name --no-header | grep "$pattern" || true)
-    
+
     if [[ -z "$droplets" ]]; then
         warn "No testbeds found matching pattern: $pattern"
-        return 0
+    else
+        echo "$droplets" | while read -r droplet; do
+            if [[ -n "$droplet" ]]; then
+                log "Destroying testbed: $droplet"
+                if ! doctl compute droplet delete "$droplet" --force; then
+                    warn "Failed to delete droplet $droplet"
+                fi
+            fi
+        done
+        wait_for_tag_cleanup "$droplet_tag" || return 1
     fi
-    
-    echo "$droplets" | while read -r droplet; do
-        if [[ -n "$droplet" ]]; then
-            log "Destroying testbed: $droplet"
-            doctl compute droplet delete "$droplet" --force
+
+    # Verify no droplets remain for the tag
+    if remaining=$(doctl compute droplet list --tag-name "$droplet_tag" --format ID --no-header 2>/dev/null); then
+        if [[ -n "$remaining" ]]; then
+            warn "Droplets still tagged with $droplet_tag after cleanup: $(echo "$remaining" | tr '\n' ' ')"
+            return 1
         fi
-    done
-    
+    fi
+
     log "Testbed destruction complete"
 }
 
@@ -273,11 +330,11 @@ EOF
 case "$1" in
     create)
         check_requirements
-        create_testbed "$2"
+        create_testbed "$2" "$3"
         ;;
     destroy)
         check_requirements
-        destroy_testbed "$2"
+        destroy_testbed "$2" "$3"
         ;;
     list)
         check_requirements
@@ -294,22 +351,22 @@ case "$1" in
     *)
         echo "ColmenaOS Digital Ocean Testbed CLI"
         echo ""
-        echo "Usage: $0 [create|destroy|list|connect|deploy] [testbed-name]"
+        echo "Usage: $0 [create|destroy|list|connect|deploy] [testbed-name] [testbed-tag]"
         echo ""
         echo "Commands:"
-        echo "  create [name]    Create a new testbed (default: 'default')"
-        echo "  destroy [name]   Destroy testbed(s) matching name pattern"
+        echo "  create [name] [tag]    Create a new testbed (default name: 'default', default tag: '${DEFAULT_TESTBED_TAG}')"
+        echo "  destroy [name] [tag]   Destroy testbed(s) with matching name or tag"
         echo "  list            List all active testbeds"
         echo "  connect [name]   SSH into a testbed (connects to most recent if no name)"
         echo "  deploy [name]    Deploy ColmenaOS to a testbed"
         echo ""
         echo "Examples:"
-        echo "  $0 create audio-test    # Create testbed for audio testing"
+        echo "  $0 create audio-test feature-x-ci   # Create testbed with explicit tag"
         echo "  $0 list                 # List all active testbeds"
         echo "  $0 connect audio-test   # SSH into audio-test testbed"
         echo "  $0 deploy audio-test    # Deploy ColmenaOS to audio-test"
         echo "  $0 destroy audio-test   # Destroy specific testbed"
-        echo "  $0 destroy              # Destroy all testbeds"
+        echo "  $0 destroy '' feature-x-ci   # Destroy any droplet tagged feature-x-ci"
         echo ""
         echo "Requirements:"
         echo "  - doctl installed and authenticated"

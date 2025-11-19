@@ -19,8 +19,16 @@ on:
   release:
     types: [published]
 
+concurrency:
+  group: balena-production-${{ github.event_name }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
 env:
   BALENA_PRODUCTION_FLEET: ${{ vars.BALENA_PRODUCTION_FLEET || 'colmena-os-production' }}
+  BALENA_CLI_VERSION: ${{ vars.BALENA_CLI_VERSION || '17.6.0' }}
 
 jobs:
   validate-deployment:
@@ -71,9 +79,13 @@ jobs:
 
       - name: Install Balena CLI
         run: |
-          curl -fsSL https://github.com/balena-io/balena-cli/releases/latest/download/balena-cli-linux-x64-standalone.zip -o balena-cli.zip
-          unzip balena-cli.zip
+          set -euo pipefail
+          cli_version="${BALENA_CLI_VERSION}"
+          echo "Installing balena-cli v${cli_version}"
+          curl -fsSL "https://github.com/balena-io/balena-cli/releases/download/v${cli_version}/balena-cli-v${cli_version}-linux-x64-standalone.zip" -o balena-cli.zip
+          unzip -q balena-cli.zip
           sudo mv balena-cli/* /usr/local/bin/
+          rm -rf balena-cli balena-cli.zip
           balena version
 
       - name: Login to Balena Cloud
