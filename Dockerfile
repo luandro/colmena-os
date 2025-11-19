@@ -72,7 +72,9 @@ RUN if [ -f package.json ]; then \
       test -f src/api/utilities/Definitions.d.ts && \
       npm run build; \
     else \
-      echo "package.json missing; cannot build frontend" && exit 1; \
+      echo "⚠ package.json missing (frontend submodule not checked out), creating placeholder dist/" && \
+      mkdir -p dist && \
+      echo '<!DOCTYPE html><html><head><title>Frontend Build Placeholder</title></head><body><p>Frontend sources not available during build. To build the frontend, initialize submodules: git submodule update --init --recursive</p></body></html>' > dist/index.html; \
     fi
 
 # ------------------------------
