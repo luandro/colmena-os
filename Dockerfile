@@ -53,11 +53,12 @@ RUN apk add --no-cache \
 # Set up backend
 WORKDIR /opt/app
 COPY --from=backend-builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
+COPY --from=backend-builder /usr/local/bin/gunicorn /usr/local/bin/gunicorn
 COPY --from=backend-builder /opt/backend .
 
 # Set up frontend
 COPY --from=frontend-builder /opt/frontend/dist /usr/share/nginx/html
-COPY frontend/devops/local/nginx/app /etc/nginx/conf.d/default.conf
+COPY frontend/devops/local/nginx/app /etc/nginx/http.d/default.conf
 
 # Configure backend entrypoint
 COPY backend/devops/builder/entrypoint.sh .
